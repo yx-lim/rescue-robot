@@ -6,12 +6,13 @@ PLEASE FINISH WRITING THE CODE, especially where marked by FIXME.
 
 """
 
+import time
 import numpy as np
 from math import pi
 from visualization import Visualization
 from world import World
 from robot import Robot
-
+from planner import Planner
 
 #
 #  Define the Walls
@@ -44,7 +45,48 @@ w = [
     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 ]
 
+w2 = w = [
+"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+"x                                                                  x",
+"x   xxxxxxxxxxxxx        xxxxxxxxxxxxx        xxxxxxxxxxxxx        x",
+"x   x           x        x           x        x           x        x",
+"x   x           x        x           x        x           x        x",
+"x   x           x        x           x        x           x        x",
+"x   x           x        x           x        x           x        x",
+"x   x           x        x           x        x           x        x",
+"x   xxxxx   xxxxx        xxxxx   xxxxx        xxxxx   xxxxx        x",
+"x       x   x                x   x                x   x            x",
+"x       x   x                x   x                x   x            x",
+"x       x   x                x   x                x   x            x",
+"x       x   xxxxxxxxxxxxxxxxxx   xxxxxxxxxxxxxxxxxx   x            x",
+"x       x                                                   xxxx   x",
+"x       x                                                   x  x   x",
+"x       x                                                   x  x   x",
+"x   xxxxxxxxxxxxx      xxxxxxxxxxxxxxxxxxxxxxxxx      xxxxxxxxxx   x",
+"x   x           x      x                       x      x        x   x",
+"x   x           x      x                       x      x        x   x",
+"x   x           x      x                       x      x        x   x",
+"x   x           x      x                       x      x        x   x",
+"x   x           x      x                       x      x        x   x",
+"x   xxxxxxxxxxxxx      xxxxxxxxxxxxxxxxxxxxxxxxx      xxxxxxxxxx   x",
+"x                                                                  x",
+"x                  xxxxxxxxxxxxxxxxxxxxxxxxxxxxx                   x",
+"x                  x                           x                   x",
+"x                  x                           x                   x",
+"x                  x                           x                   x",
+"x                  x                           x                   x",
+"x                  xxxxxxxxxxxxxxxxxxxxxxxxxxxxx                   x",
+"x                                                                  x",
+"x                                                                  x",
+"x                                                                  x",
+"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+]
+
 walls = np.array([[1.0 * (c == "x") for c in s] for s in w])
+world = World(walls)
+rows = world.rows
+cols = world.cols
+auto = True
 
 # How to use continuous fire:
 #   1. Set num_ignition_points > 0 so fire is enabled.
@@ -140,7 +182,8 @@ def precomputeSensorProbability(drow, dcol, robot):
 #  Main Code
 #
 def main():
-    robot = Robot(world, row=7, col=12, pSensor=[1,1,0.8,0.8,0.5,0.5,0.5,0.5], thetainc=pi/12)
+    robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.5,0.5,0.5,0.5], thetainc=pi/20)
+    planner = Planner(robot, (5, 14))
 
     if world._num_ignition_points > 0:
         world.start_fire()
@@ -150,46 +193,49 @@ def main():
 
     # Loop continually.
     while True:
+        time.sleep(0.5)
         # Advance fire simulation (manual interval)
         if world._num_ignition_points > 0:
             world.step_fire(FIRE_DT)
         # Show the current belief.  Also show the actual position.
         visual.show(markRobot=True)
 
-        # Get the command key to determine the direction.
-        while True:
-            key = input("Cmd (q=quit, wer // s.f // xcv)?")
-            if key == "q":
-                return
-            elif key == "w":
-                (drow, dcol) = (-1, -1)
-                break  # up/left
-            elif key == "e":
-                (drow, dcol) = (-1, 0)
-                break  # up
-            elif key == "r":
-                (drow, dcol) = (-1, 1)
-                break  # up/right
-            elif key == "s":
-                (drow, dcol) = (0, -1)
-                break  # left
-            elif key == "f":
-                (drow, dcol) = (0, 1)
-                break  # right
-            elif key == "x":
-                (drow, dcol) = (1, -1)
-                break  # down/left
-            elif key == "c":
-                (drow, dcol) = (1, 0)
-                break  # down
-            elif key == "v":
-                (drow, dcol) = (1, 1)
-                break  # down/right
+        if auto:
+            planner.step()    
+        else:
+            # Get the command key to determine the direction.
+            while True:
+                key = input("Cmd (q=quit, wer // s.f // xcv)?")
+                if key == "q":
+                    return
+                elif key == "w":
+                    (drow, dcol) = (-1, -1)
+                    break  # up/left
+                elif key == "e":
+                    (drow, dcol) = (-1, 0)
+                    break  # up
+                elif key == "r":
+                    (drow, dcol) = (-1, 1)
+                    break  # up/right
+                elif key == "s":
+                    (drow, dcol) = (0, -1)
+                    break  # left
+                elif key == "f":
+                    (drow, dcol) = (0, 1)
+                    break  # right
+                elif key == "x":
+                    (drow, dcol) = (1, -1)
+                    break  # down/left
+                elif key == "c":
+                    (drow, dcol) = (1, 0)
+                    break  # down
+                elif key == "v":
+                    (drow, dcol) = (1, 1)
+                    break  # down/right
 
-        # Move the robot in the simulation.
-        robot.command(drow, dcol)
-
-        robot.sense_radar()
+            # Move the robot in the simulation.
+            robot.command(drow, dcol)
+            robot.sense_radar()
 
 if __name__ == "__main__":
     main()
