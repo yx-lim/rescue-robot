@@ -57,6 +57,8 @@ class Robot():
 
     def sense_ray(self, drow, dcol):
 
+
+    def sense_ray(self, drow, dcol):
         for k in range(len(self.pSensor)):
             nr = math.floor(self.row + drow*(k+1)) if drow < 0 else math.ceil(self.row + drow*(k+1))
             nc = math.floor(self.col + dcol*(k+1)) if dcol < 0 else math.ceil(self.col + dcol*(k+1))
