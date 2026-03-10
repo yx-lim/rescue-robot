@@ -45,9 +45,24 @@ w = [
 ]
 
 walls = np.array([[1.0 * (c == "x") for c in s] for s in w])
-world = World(walls)
+
+# How to use continuous fire:
+#   1. Set num_ignition_points > 0 so fire is enabled.
+#   2. In main(), world.start_fire() is called once to ignite random cells.
+#   3. Each loop iteration, world.step_fire(FIRE_DT) advances fire by FIRE_DT seconds.
+#   4. Adjust FIRE_DT (e.g. 0.2–0.6) to control how fast fire evolves per key press.
+# Set num_ignition_points=0 to disable fire.
+
+world = World(walls,
+             fire_spread_prob=0.3,        # prob to spread to open cell per step
+             fire_spread_prob_wall=0.1,   # prob to spread to wall cell per step
+             burn_out_time=8.0,           # seconds before cell burns out (can reignite)
+             num_ignition_points=2)       # random cells to ignite at start; 0 = no fire
 rows = world.rows
 cols = world.cols
+
+# Time step for fire when stepping (seconds per loop iteration)
+FIRE_DT = 0.3
 
 
 #
@@ -127,11 +142,17 @@ def precomputeSensorProbability(drow, dcol, robot):
 def main():
     robot = Robot(world, row=7, col=12, pSensor=[1,1,0.8,0.8,0.5,0.5,0.5,0.5], thetainc=pi/12)
 
+    if world._num_ignition_points > 0:
+        world.start_fire()
+
     # Initialize the figure.
     visual = Visualization(walls, robot)
 
     # Loop continually.
     while True:
+        # Advance fire simulation (manual interval)
+        if world._num_ignition_points > 0:
+            world.step_fire(FIRE_DT)
         # Show the current belief.  Also show the actual position.
         visual.show(markRobot=True)
 

@@ -115,6 +115,8 @@ class Visualization():
 
         # Create the color range.  There are clearly more elegant ways...
         color = np.ones((self.rows, self.cols, 3))
+        has_fire = hasattr(self.robot.world, 'is_fire')
+        orange = np.array([1.0, 0.5, 0.0])
         for row in range(self.rows):
             for col in range(self.cols):
                 if prob is None:
@@ -133,6 +135,11 @@ class Visualization():
                         rlevel = (1.0 - p)
                         glevel = (1.0 - p) * pmin/p
                         color[row,col,0:3] = np.array([rlevel, glevel, 1.0])
+                
+                # Overlay fire (orange tint) without replacing the underlying map
+                if has_fire and self.robot.world.is_fire(row, col):
+                    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
+    
     
         # Draw the boxes.
         self.content = plt.gca().imshow(color,
