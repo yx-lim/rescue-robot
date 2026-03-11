@@ -100,5 +100,17 @@ class Planner():
                 for neighbor in node.neighbors:
                     self.update_vertex(neighbor)
         self.compute_shortest_path()
+    
+    def get_path(self):
+        path = []
+        curr = self.start
+        while curr != self.goal:
+            costs = [self.c(n)+ n.g for n in curr.neighbors]
+            next = curr.neighbors[np.argmin(costs)]
+            path.append(next)
+            curr = next
+
+        return path
+
 
     

@@ -108,26 +108,25 @@ FIRE_DT = 0.03
 #
 def main():
     
-    robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.7,0.7,0.7,0.5], thetainc=pi/180)
-    planner = Planner(robot, (5, 10))
+    robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.7,0.7,0.7,0.5], thetainc=pi/20, lbound=10, lfree=0.2, lwall=0.5)
+    planner = Planner(robot, (5, 10), cost_uncertain=1)
 
     if world._num_ignition_points > 0:
         world.start_fire()
 
     # Initialize the figure.
-    visual = Visualization(walls, robot)
+    visual = Visualization(walls, robot, planner)
 
-    # Loop continually.
-    while True:
+    # Loop continually or until goal is reached.
+    while not auto or planner.start != planner.goal:
         # Advance fire simulation (manual interval)
         if world._num_ignition_points > 0:
             world.step_fire(FIRE_DT)
-        # Show the current belief.  Also show the actual position.
-        visual.show(markRobot=True)
-
         if auto:
-            planner.step()    
+            planner.step()  
+            visual.show(markRobot=True, showPath=True)
         else:
+            visual.show(markRobot=True, showPath=False)
             # Get the command key to determine the direction.
             while True:
                 key = input("Cmd (q=quit, wer // s.f // xcv)?")
@@ -161,6 +160,9 @@ def main():
             # Move the robot in the simulation.
             robot.command(drow, dcol)
             robot.sense_radar()
+    
+    print(robot.steps)
+    time.sleep(5)
 
 if __name__ == "__main__":
     main()
