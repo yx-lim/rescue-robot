@@ -91,10 +91,10 @@ w = [
 
 walls = np.array([[1.0 * (c == "x") for c in s] for s in w])
 world = World(walls,
-             fire_spread_prob=0.002,        # prob to spread to open cell per step
+             fire_spread_prob=0.003,        # prob to spread to open cell per step
              fire_spread_prob_wall=0.006,   # prob to spread to wall cell per step
              burn_out_time=8.0,           # seconds before cell burns out (can reignite)
-             num_ignition_points=30)       # random cells to ignite at start; 0 = no fire
+             num_ignition_points=50)       # random cells to ignite at start; 0 = no fire
 rows = world.rows
 cols = world.cols
 auto = True
@@ -109,7 +109,7 @@ FIRE_DT = 0.03
 def main():
     
     robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.7,0.7,0.7,0.5], thetainc=pi/20, lbound=10, lfree=0.2, lwall=0.5)
-    planner = Planner(robot, (5, 10), cost_uncertain=1)
+    planner = Planner(robot, (5, 10), cost_uncertain=1, fire_multiplier=5)
 
     if world._num_ignition_points > 0:
         world.start_fire()
