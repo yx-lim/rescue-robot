@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import random
-import robot
+from planner import Planner
+from robot import Robot
 
 
 ######################################################################
@@ -25,10 +25,11 @@ import robot
 #   should be overlayed with an 'x'.
 #
 class Visualization():
-    def __init__(self, walls, robot: robot.Robot):
+    def __init__(self, walls, robot: Robot, planner: Planner):
         # Save the walls, robot, and determine the rows/cols:
         self.walls = walls
         self.robot = robot
+        self.planner = planner
         self.spots = np.sum(np.logical_not(walls))
         self.rows  = np.size(walls, axis=0)
         self.cols  = np.size(walls, axis=1)
@@ -70,16 +71,17 @@ class Visualization():
 
         # Add the text.
         plt.gca().text(0, 40, "Probability: Yellow==0%")
-        plt.gca().text(0, 42, "     White<=0.1%, Darker Blue, Black=100%")
+        plt.gca().text(0, 42, "     White<=0.1%, Blue, Black=100%")
 
         # Clear the content and mark.  Then show blank field.
         self.content = None
         self.mark    = None
+        self.path    = None
         self.show()
 
     def flush(self):
         # Show the plot.
-        plt.pause(0.001)
+        plt.pause(0.1)
 
     def updatemark(self, markRobot=True):
         # Clear/potentially remove the previous mark.
@@ -96,15 +98,16 @@ class Visualization():
             assert (col >= 0) and (col < self.cols), "Illegal robot col"
 
             # Draw the mark.
-            self.mark  = plt.gca().text(0.5+col, 0.5+row, 'x', color = 'green',
+            self.mark  = plt.gca().text(0.5+col, 0.5+row, 'x', color = 'red',
                                         verticalalignment='center',
                                         horizontalalignment='center',
+                                        fontweight='bold',
                                         zorder=1)
 
     def logits_to_probs(self, logits):
         return 1 / (1 + np.exp(-logits))
 
-    def updategrid(self):
+    def updategrid(self, showPath):
         # Check the probability grid array size.
         prob = self.logits_to_probs(self.robot.walls_logits)
         if prob is not None:
@@ -131,12 +134,14 @@ class Visualization():
                         color[row,col,0:3] = np.array([1.0, 1.0, 0.0])   # yellow = impossible
                     else:
                         level = (1.0 - p)
-                        color[row,col,0:3] = np.array([level*0.2, level*0.4, level])  # deeper blue for high prob
+                        color[row,col,0:3] = np.array([level, level, 1])  # deeper blue for high prob
                 
                 # Overlay fire (orange tint) without replacing the underlying map
                 if has_fire and self.robot.world.is_fire(row, col):
                     color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
     
+        if showPath:
+            color[self.planner.goal.row, self.planner.goal.col, 0:3] = np.array([0.0, 1.0, 0.0])
     
         # Draw the boxes.
         self.content = plt.gca().imshow(color,
@@ -144,13 +149,32 @@ class Visualization():
                                         interpolation='none',
                                         extent=[0, self.cols, self.rows, 0],
                                         zorder=0)
+    
+    def updatepath(self):
+        if self.path is not None:
+            self.path.remove()
+            self.path = None
 
-    def show(self, msg = None, markRobot = False):
+        path = self.planner.get_path()
+        ys = []
+        xs = []
+
+        for node in path:
+            # +0.5 so it is in centre of square
+            ys.append(node.row+0.5)
+            xs.append(node.col+0.5)
+
+        self.path, = plt.plot(xs, ys, color=[0, 1, 0], linewidth=2)
+
+    def show(self, msg = None, markRobot = False, showPath = False):
         # Update the content.
-        self.updategrid()
+        self.updategrid(showPath)
 
         # Potentially add the mark.
         self.updatemark(markRobot)
+
+        if showPath:
+            self.updatepath()
 
         # Flush the figure.
         self.flush()

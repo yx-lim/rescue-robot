@@ -53,6 +53,7 @@ class Robot():
         self.world = world
         self.thetainc = thetainc
         self.lbound = lbound
+        self.steps = 0
 
     def adjust(self, u, v, delta):
         if (u >= 0) and (u < self.world.rows) and (v >= 0) and (v < self.world.cols):
@@ -63,7 +64,7 @@ class Robot():
     def command(self, drow, dcol):
         # Check the delta.
         assert (max(abs(drow), abs(dcol)) == 1), "Bad delta"
-
+        self.steps += 1
         # Try to move the robot the given delta.
         row = self.row + drow
         col = self.col + dcol
