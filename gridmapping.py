@@ -17,7 +17,7 @@ from planner import Planner
 #
 #  Define the Walls
 #
-w = [
+w1 = [
     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "x               xx             xx               x",
     "x                xx           xx                x",
@@ -45,7 +45,7 @@ w = [
     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 ]
 
-w2 = w = [
+w = [
 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 "x                                                                  x",
 "x   xxxxxxxxxxxxx        xxxxxxxxxxxxx        xxxxxxxxxxxxx        x",
@@ -82,12 +82,6 @@ w2 = w = [
 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 ]
 
-walls = np.array([[1.0 * (c == "x") for c in s] for s in w])
-world = World(walls)
-rows = world.rows
-cols = world.cols
-auto = True
-
 # How to use continuous fire:
 #   1. Set num_ignition_points > 0 so fire is enabled.
 #   2. In main(), world.start_fire() is called once to ignite random cells.
@@ -95,95 +89,27 @@ auto = True
 #   4. Adjust FIRE_DT (e.g. 0.2–0.6) to control how fast fire evolves per key press.
 # Set num_ignition_points=0 to disable fire.
 
+walls = np.array([[1.0 * (c == "x") for c in s] for s in w])
 world = World(walls,
-             fire_spread_prob=0.3,        # prob to spread to open cell per step
-             fire_spread_prob_wall=0.1,   # prob to spread to wall cell per step
+             fire_spread_prob=0.002,        # prob to spread to open cell per step
+             fire_spread_prob_wall=0.006,   # prob to spread to wall cell per step
              burn_out_time=8.0,           # seconds before cell burns out (can reignite)
-             num_ignition_points=2)       # random cells to ignite at start; 0 = no fire
+             num_ignition_points=30)       # random cells to ignite at start; 0 = no fire
 rows = world.rows
 cols = world.cols
+auto = True
 
 # Time step for fire when stepping (seconds per loop iteration)
-FIRE_DT = 0.3
-
-
-#
-#  MEASUREMENT UPDATE (CORRECTION)
-#
-#  Input:  prior        Grid of prior probabilities (belief)
-#          probSensor   Grid of modeled probabilities that (sensor==True)
-#          sensor       Actual value of sensor (True/False)
-#
-#  Output: post         Grid of posterior probabilities (updated belief)
-#
-def updateBelief(prior, probSensor, sensor):
-    # Create the posterior belief.
-    if sensor:  # sensor is True
-        post = probSensor * prior
-    else:  # sensor is False
-        post = (1 - probSensor) * prior
-
-    post /= post.sum()
-
-    # Check the updated belief.
-    if abs(np.sum(post) - 1.0) > 1e-12:
-        print("WARNING: Belief does not add up to 100%")
-
-    # Return the updated belief.
-    return post
-
-
-#######################################################################
-#
-#  Pre-compute the Modeled Sensor Probability Grid
-#
-#  Input:  drow, dcol   Sensor direction in row/col
-#
-#  Output: prob         Grid of modeled probabilities that (sensor==True)
-#
-def precomputeSensorProbability4(drow, dcol):
-    # Prepare an empty probability grid.
-    prob = np.zeros((rows, cols))
-    # Pre-compute the sensor probability on the grid.
-    # FIXME:
-    for r in range(rows):
-        for c in range(cols):
-            wall = 0
-            new_r, new_c = r + drow, c + dcol
-            if 0 <= new_r < rows and 0 <= new_c < cols and walls[new_r][new_c]:
-                wall = 1
-            prob[r][c] = wall
-
-    # Return the computed grid.
-    return prob
-
-
-def precomputeSensorProbability(drow, dcol, robot):
-    # Prepare an empty probability grid.
-    prob = np.zeros((rows, cols))
-    # Pre-compute the sensor probability on the grid.
-    # FIXME:
-    for r in range(rows):
-        for c in range(cols):
-            wall = 0
-            for i in range(1, len(robot.pSensor) + 1):
-                new_r, new_c = r + i * drow, c + i * dcol
-                if 0 <= new_r < rows and 0 <= new_c < cols and walls[new_r][new_c]:
-                    wall += robot.pSensor[i - 1]
-                    break
-            prob[r][c] = wall
-
-    # Return the computed grid.
-    return prob
-
+FIRE_DT = 0.03
 
 ######################################################################
 #
 #  Main Code
 #
 def main():
-    robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.5,0.5,0.5,0.5], thetainc=pi/20)
-    planner = Planner(robot, (5, 14))
+    
+    robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.7,0.7,0.7,0.5], thetainc=pi/180)
+    planner = Planner(robot, (5, 10))
 
     if world._num_ignition_points > 0:
         world.start_fire()
@@ -193,7 +119,6 @@ def main():
 
     # Loop continually.
     while True:
-        time.sleep(0.5)
         # Advance fire simulation (manual interval)
         if world._num_ignition_points > 0:
             world.step_fire(FIRE_DT)

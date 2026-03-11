@@ -7,8 +7,14 @@ from typing import Tuple
 
 
 class Planner():
-    def __init__(self, robot: Robot, goal: Tuple[int, int]):
+    def __init__(self,
+                 robot: Robot, 
+                 goal: Tuple[int, int],
+                 lfree=None,
+                 cost_uncertain=1.0):
         self.robot = robot
+        self.lfree = lfree if lfree else 1.5*robot.lstart
+        self.cost_uncertain = cost_uncertain
         self.onDeck = []
         self.km = 0
         self.nodes = []
@@ -36,7 +42,11 @@ class Planner():
         self.compute_shortest_path()
 
     def c(self, node: Node):
-        return (inf if self.robot.walls[node.row][node.col] > 0.5 else 1.0)
+        if self.robot.walls_logits[node.row][node.col] >= 0:
+            return inf
+        if self.robot.walls_logits[node.row][node.col] < self.lfree:
+            return 1.0
+        return self.cost_uncertain
     
     def h(self, node1: Node, node2: Node):
         return max(abs(node1.row - node2.row), abs(node1.col - node2.col))
@@ -81,7 +91,6 @@ class Planner():
         self.robot.sense_radar()
         changed = False
         for node in self.nodes:
-            # what you'll want to do is compute the current c and compare it to the previous c
             if self.c(node) != node.old_c:
                 if not changed:
                     self.km += self.h(self.last, self.start)

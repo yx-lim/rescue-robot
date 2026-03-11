@@ -26,8 +26,16 @@ import math
 #   and the sensor may be configured to a random probability level.
 #
 class Robot():
-    def __init__(self, world: world.World, row = 0, col = 0, 
-                 pSensor = [1.0], thetainc=math.pi / 2):
+    def __init__(self, 
+                 world: world.World, 
+                 row = 0, 
+                 col = 0, 
+                 pSensor = [1.0], 
+                 thetainc=math.pi / 2, 
+                 lstart=-1.0,
+                 lwall=0.4, 
+                 lfree=0.2,
+                 lbound=7.0):
         # Report.
         location = " (at %d, %d)" % (row, col)
         print("Starting robot with real" +
@@ -35,12 +43,22 @@ class Robot():
               "," + str(location))
 
         # Save the walls, the initial location, and the probabilities.
-        self.walls    = np.zeros((world.rows, world.cols))
+        self.walls_logits = np.full((world.rows, world.cols), lstart)
+        self.lstart = lstart
+        self.lwall = lwall
+        self.lfree = lfree
         self.pSensor  = pSensor
         self.row = row
         self.col = col
         self.world = world
         self.thetainc = thetainc
+        self.lbound = lbound
+
+    def adjust(self, u, v, delta):
+        if (u >= 0) and (u < self.world.rows) and (v >= 0) and (v < self.world.cols):
+            self.walls_logits[u, v] = np.clip(self.walls_logits[u, v] + delta, -self.lbound, self.lbound)
+        else:
+            print("Out of bounds (%d, %d)" % (u, v))
 
     def command(self, drow, dcol):
         # Check the delta.
@@ -49,16 +67,19 @@ class Robot():
         # Try to move the robot the given delta.
         row = self.row + drow
         col = self.col + dcol
-        if (not self.walls[row, col] and not self.world.is_wall(row, col)):
+        if (self.walls_logits[row, col] < 0 and not self.world.is_wall(row, col)):
             self.row = row
             self.col = col
+            self.walls_logits[row, col] = -self.lbound
             return True
+        if self.world.is_wall(row, col):
+            self.walls_logits[row, col] = self.lbound
         return False
 
     def sense_ray(self, drow, dcol):
         for k in range(len(self.pSensor)):
-            nr = math.floor(self.row + drow*(k+1)) if drow < 0 else math.ceil(self.row + drow*(k+1))
-            nc = math.floor(self.col + dcol*(k+1)) if dcol < 0 else math.ceil(self.col + dcol*(k+1))
+            nr = round(self.row + drow*(k+1))
+            nc = round(self.col + dcol*(k+1))
 
             # Stop if outside map
             if not (0 <= nr < self.world.rows and 0 <= nc < self.world.cols):
@@ -66,10 +87,10 @@ class Robot():
 
             # Check wall
             if self.world.is_wall(nr, nc) and random.random() < self.pSensor[k]:
-                self.walls[nr][nc] = min(1, self.walls[nr][nc]+0.2)  # mark wall
+                self.adjust(nr, nc, self.lwall)  # mark wall
                 return k  # stop scanning beyond wall
             else:
-                self.walls[nr][nc] = max(0, self.walls[nr][nc]-0.1)
+                self.adjust(nr, nc, -self.lfree)
         return len(self.pSensor)
     
     def sense_radar(self):

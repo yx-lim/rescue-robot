@@ -69,8 +69,8 @@ class Visualization():
             plt.gca().axvline(col, lw=1, color='k', zorder=1)
 
         # Add the text.
-        plt.gca().text(0, 29, "Probability: Yellow==0%")
-        plt.gca().text(0, 31, "     White<=0.1%, Pink<1%, Violet<10%, Purple<50%, Blue=100%")
+        plt.gca().text(0, 40, "Probability: Yellow==0%")
+        plt.gca().text(0, 42, "     White<=0.1%, Darker Blue, Black=100%")
 
         # Clear the content and mark.  Then show blank field.
         self.content = None
@@ -101,9 +101,12 @@ class Visualization():
                                         horizontalalignment='center',
                                         zorder=1)
 
+    def logits_to_probs(self, logits):
+        return 1 / (1 + np.exp(-logits))
+
     def updategrid(self):
         # Check the probability grid array size.
-        prob = self.robot.walls
+        prob = self.logits_to_probs(self.robot.walls_logits)
         if prob is not None:
             assert np.size(prob, axis=0) == self.rows, "Inconsistent # of rows"
             assert np.size(prob, axis=1) == self.cols, "Inconsistent # of cols"
@@ -122,19 +125,13 @@ class Visualization():
                 if prob is None:
                     color[row,col,0:3] = np.array([1.0, 1.0, 1.0])   # White
                 else:
-                    # Shades of pink/purple/blue. Yellow means impossible.
+                    # Shades of blue. Yellow means impossible.
                     p    = prob[row,col]
-                    pmin = 0.9 / self.spots
                     if p == 0:
-                        color[row,col,0:3] = np.array([1.0, 1.0, 0.0])
-                    elif p < pmin:
-                        rlevel = (1.0 - p)
-                        glevel = (1.0 - p)
-                        color[row,col,0:3] = np.array([rlevel, glevel, 1.0])
+                        color[row,col,0:3] = np.array([1.0, 1.0, 0.0])   # yellow = impossible
                     else:
-                        rlevel = (1.0 - p)
-                        glevel = (1.0 - p) * pmin/p
-                        color[row,col,0:3] = np.array([rlevel, glevel, 1.0])
+                        level = (1.0 - p)
+                        color[row,col,0:3] = np.array([level*0.2, level*0.4, level])  # deeper blue for high prob
                 
                 # Overlay fire (orange tint) without replacing the underlying map
                 if has_fire and self.robot.world.is_fire(row, col):
