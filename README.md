@@ -1,8 +1,8 @@
 # me133b
 
 - [X] Change from probability to logits
-- [ ] Make the grid finer / how to actually do walls rather than xs as we make the grid finer?
-- [ ] Show path on the visualisation
+- [ ] (Not as important) Make the grid finer / how to actually do walls rather than xs as we make the grid finer?
+- [X] Show path on the visualisation
 - [X] Have unknown cost be higher than known cost (D* can be optimistic as to there not being walls)
 - [ ] Include the cost of pushing through fire
 - [ ] Possibly visualising real vs apparent (ie robot has no clue of how fire is outside its local area, and when added with walls currently it becomes hard to visualise what is real and what is perception)
