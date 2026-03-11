@@ -11,10 +11,12 @@ class Planner():
                  robot: Robot, 
                  goal: Tuple[int, int],
                  lfree=None,
-                 cost_uncertain=1.0):
+                 cost_uncertain=1.0,
+                 fire_multiplier=5.0):
         self.robot = robot
         self.lfree = lfree if lfree else 1.5*robot.lstart
         self.cost_uncertain = cost_uncertain
+        self.fire_multiplier = fire_multiplier
         self.onDeck = []
         self.km = 0
         self.nodes = []
@@ -42,11 +44,11 @@ class Planner():
         self.compute_shortest_path()
 
     def c(self, node: Node):
-        if self.robot.walls_logits[node.row][node.col] >= 0:
+        if self.robot.walls_logits[node.row, node.col] >= 0:
             return inf
-        if self.robot.walls_logits[node.row][node.col] < self.lfree:
-            return 1.0
-        return self.cost_uncertain
+        if self.robot.walls_logits[node.row, node.col] < self.lfree:
+            return 1.0 if not self.robot.fire[node.row, node.col] else self.fire_multiplier
+        return self.cost_uncertain if not self.robot.fire[node.row, node.col] else self.fire_multiplier*self.cost_uncertain
     
     def h(self, node1: Node, node2: Node):
         return max(abs(node1.row - node2.row), abs(node1.col - node2.col))
