@@ -9,6 +9,7 @@
 - [ ] Fix sensor (currently there is a probability that it doesn’t see the wall, and this means that it will keep going and detects a far away wall, whereas what we want is just a ± a couple grid elements worth of uncertainty, the wall isn’t invisible)
 - [ ] Have it go to a goal and return, not just go and stay
 - [ ] If it hits the wall, it should take some sort of extra penalty vs detecting there is a wall (overall we should determine some metric of what we're optimising)
+- [ ] Discuss how fire should start (small and rapid expansion vs large and slow expansion)
 
 Later:
 - [ ] Actually change comments so it reflects what goes on in the code (mb yall)
