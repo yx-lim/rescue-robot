@@ -78,7 +78,7 @@ class Robot():
             self.walls_logits[row, col] = self.lbound
         return False
 
-    def sense_ray(self, drow, dcol):
+    def sense_wall(self, drow, dcol):
         for k in range(len(self.pSensor)):
             nr = round(self.row + drow*(k+1))
             nc = round(self.col + dcol*(k+1))
@@ -91,10 +91,21 @@ class Robot():
             if self.world.is_wall(nr, nc) and random.random() < self.pSensor[k]:
                 self.adjust(nr, nc, self.lwall)  # mark wall
                 return k  # stop scanning beyond wall
+            self.adjust(nr, nc, -self.lfree)
+        return len(self.pSensor)
+    
+    def sense_fire(self, drow, dcol):
+        for k in range(len(self.pSensor)):
+            nr = round(self.row + drow*(k+1))
+            nc = round(self.col + dcol*(k+1))
+
+            # Stop if outside map or if a wall is in the way (can't sense heat through walls)
+            if not (0 <= nr < self.world.rows and 0 <= nc < self.world.cols) or self.world.is_wall(nr, nc):
+                return k
+
             if self.world.is_fire(nr, nc):
                 self.fire[nr, nc] = 1
                 return k
-            self.adjust(nr, nc, -self.lfree)
         return len(self.pSensor)
     
     def sense_radar(self):
@@ -102,5 +113,6 @@ class Robot():
         while angle < 2 * math.pi:
             drow = np.sin(angle)
             dcol = np.cos(angle)
-            self.sense_ray(drow, dcol)
+            self.sense_wall(drow, dcol)
+            self.sense_fire(drow, dcol)
             angle += self.thetainc

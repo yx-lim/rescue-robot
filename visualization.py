@@ -121,7 +121,7 @@ class Visualization():
 
         # Create the color range.  There are clearly more elegant ways...
         color = np.ones((self.rows, self.cols, 3))
-        has_fire = hasattr(self.robot.world, 'is_fire')
+        # has_fire = hasattr(self.robot.world, 'is_fire')
         orange = np.array([1.0, 0.5, 0.0])
         for row in range(self.rows):
             for col in range(self.cols):
@@ -137,8 +137,12 @@ class Visualization():
                         color[row,col,0:3] = np.array([level, level, 1])  # deeper blue for high prob
                 
                 # Overlay fire (orange tint) without replacing the underlying map
-                if has_fire and self.robot.world.is_fire(row, col):
+                # ill keep for now only showing the robot's perception of fire, but will add 
+                # the true state later (it's in one of the to-dos)
+                if self.robot.fire[row, col]:
                     color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
+                #if has_fire and self.robot.world.is_fire(row, col):
+                #    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
     
         if showPath:
             color[self.planner.goal.row, self.planner.goal.col, 0:3] = np.array([0.0, 1.0, 0.0])
