@@ -62,13 +62,13 @@ w = [
 "x       x                                                   xxxx   x",
 "x       x                                                   x  x   x",
 "x       x                                                   x  x   x",
-"x   xxxxxxxxxxxxx      xxxxxxxxxxxxxxxxxxxxxxxxx      xxxxxxxxxx   x",
-"x   x           x      x                       x      x        x   x",
-"x   x           x      x                       x      x        x   x",
-"x   x           x      x                       x      x        x   x",
-"x   x           x      x                       x      x        x   x",
-"x   x           x      x                       x      x        x   x",
-"x   xxxxxxxxxxxxx      xxxxxxxxxxxxxxxxxxxxxxxxx      xxxxxxxxxx   x",
+"x   xxxxxxxxxxxxx                                     xxxxxxxxxx   x",
+"x   x           x                                     x        x   x",
+"x   x           x                                     x        x   x",
+"x   x           x                                     x        x   x",
+"x   x           x                                     x        x   x",
+"x   x           x                                     x        x   x",
+"x   xxxxxxxxxxxxx                                     xxxxxxxxxx   x",
 "x                                                                  x",
 "x                  xxxxxxxxxxxxxxxxxxxxxxxxxxxxx                   x",
 "x                  x                           x                   x",
@@ -109,7 +109,7 @@ FIRE_DT = 0.03
 def main():
     
     robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.7,0.7,0.7,0.5], thetainc=pi/20, lbound=10, lfree=0.2, lwall=0.5)
-    planner = Planner(robot, (5, 10), cost_uncertain=1, fire_multiplier=5)
+    planner = Planner(robot, (5, 23), cost_uncertain=1, fire_multiplier=5)
 
     if world._num_ignition_points > 0:
         world.start_fire()

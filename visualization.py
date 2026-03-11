@@ -34,60 +34,74 @@ class Visualization():
         self.rows  = np.size(walls, axis=0)
         self.cols  = np.size(walls, axis=1)
 
+        self.fig1 = plt.figure(1)
+        self.fig2 = plt.figure(2)
+        
+        self._setup_figure(self.fig1, "Robot's Perception")
+        self._setup_figure(self.fig2, "True State")
+
+        # Add the text.
+        self.fig1.gca().text(0, 40, "Probability: Yellow==0%")
+        self.fig1.gca().text(0, 42, "     White<=0.1%, Blue, Black=100%")
+
+        # Clear the content and mark.  Then show blank field.
+        self.content1 = None
+        self.mark1    = None
+        self.mark2    = None
+        self.path1    = None
+        self.path2    = None
+        self.content2 = None
+        self.show()
+
+    def _setup_figure(self, fig, title):
         # Clear the current, or create a new figure.
-        plt.clf()
+        fig.clf()
 
         # Create a new axes, enable the grid, and set axis limits.
-        plt.axes()
-        plt.grid(False)
-        plt.gca().axis('off')
-        plt.gca().set_aspect('equal')
-        plt.gca().set_xlim(0, self.cols)
-        plt.gca().set_ylim(self.rows, 0)
+        fig.gca().grid(False)
+        fig.gca().set_title(title, y=1.05)
+        fig.gca().axis('off')
+        fig.gca().set_aspect('equal')
+        fig.gca().set_xlim(0, self.cols)
+        fig.gca().set_ylim(self.rows, 0)
 
         # Add the row/col numbers.
         for row in range(0, self.rows, 2):
-            plt.gca().text(         -0.3, 0.6+row, '%d'%row,
+            fig.gca().text(         -0.3, 0.6+row, '%d'%row,
                            verticalalignment='center',
                            horizontalalignment='right')
         for row in range(1, self.rows, 2):
-            plt.gca().text(self.cols+0.3, 0.6+row, '%d'%row,
+            fig.gca().text(self.cols+0.3, 0.6+row, '%d'%row,
                            verticalalignment='center',
                            horizontalalignment='left')
         for col in range(0, self.cols, 2):
-            plt.gca().text(0.5+col,          -0.3, '%d'%col,
+            fig.gca().text(0.5+col,          -0.3, '%d'%col,
                            verticalalignment='bottom',
                            horizontalalignment='center')
         for col in range(1, self.cols, 2):
-            plt.gca().text(0.5+col, self.rows+0.3, '%d'%col,
+            fig.gca().text(0.5+col, self.rows+0.3, '%d'%col,
                            verticalalignment='top',
                            horizontalalignment='center')
-
+            
         # Draw the grid, zorder 1 means draw after zorder 0 elements.
         for row in range(self.rows+1):
-            plt.gca().axhline(row, lw=1, color='k', zorder=1)
+            fig.gca().axhline(row, lw=1, color='k', zorder=1)
         for col in range(self.cols+1):
-            plt.gca().axvline(col, lw=1, color='k', zorder=1)
+            fig.gca().axvline(col, lw=1, color='k', zorder=1)
 
-        # Add the text.
-        plt.gca().text(0, 40, "Probability: Yellow==0%")
-        plt.gca().text(0, 42, "     White<=0.1%, Blue, Black=100%")
-
-        # Clear the content and mark.  Then show blank field.
-        self.content = None
-        self.mark    = None
-        self.path    = None
-        self.show()
 
     def flush(self):
         # Show the plot.
-        plt.pause(0.1)
+        plt.pause(0.3)
 
     def updatemark(self, markRobot=True):
         # Clear/potentially remove the previous mark.
-        if self.mark is not None:
-            self.mark.remove()
-            self.mark = None
+        if self.mark1 is not None:
+            self.mark1.remove()
+            self.mark1 = None
+        if self.mark2 is not None:
+            self.mark2.remove()
+            self.mark2 = None
 
         # If requested, add a new mark.
         if markRobot:
@@ -98,7 +112,13 @@ class Visualization():
             assert (col >= 0) and (col < self.cols), "Illegal robot col"
 
             # Draw the mark.
-            self.mark  = plt.gca().text(0.5+col, 0.5+row, 'x', color = 'red',
+            self.mark1  = self.fig1.gca().text(0.5+col, 0.5+row, 'x', color = 'red',
+                                        verticalalignment='center',
+                                        horizontalalignment='center',
+                                        fontweight='bold',
+                                        zorder=1)
+            
+            self.mark2  = self.fig2.gca().text(0.5+col, 0.5+row, 'x', color = 'red',
                                         verticalalignment='center',
                                         horizontalalignment='center',
                                         fontweight='bold',
@@ -115,9 +135,9 @@ class Visualization():
             assert np.size(prob, axis=1) == self.cols, "Inconsistent # of cols"
 
         # Potentially remove the previous grid/content.
-        if self.content is not None:
-            self.content.remove()
-            self.content = None
+        if self.content1 is not None:
+            self.content1.remove()
+            self.content1 = None
 
         # Create the color range.  There are clearly more elegant ways...
         color = np.ones((self.rows, self.cols, 3))
@@ -148,34 +168,76 @@ class Visualization():
             color[self.planner.goal.row, self.planner.goal.col, 0:3] = np.array([0.0, 1.0, 0.0])
     
         # Draw the boxes.
-        self.content = plt.gca().imshow(color,
+        self.content1 = self.fig1.gca().imshow(color,
+                                        aspect='equal',
+                                        interpolation='none',
+                                        extent=[0, self.cols, self.rows, 0],
+                                        zorder=0)
+        
+    def update_true(self, showPath):
+        # Check the probability grid array size.
+        prob = self.logits_to_probs(self.robot.walls_logits)
+        if prob is not None:
+            assert np.size(prob, axis=0) == self.rows, "Inconsistent # of rows"
+            assert np.size(prob, axis=1) == self.cols, "Inconsistent # of cols"
+
+        # Potentially remove the previous grid/content.
+        if self.content2 is not None:
+            self.content2.remove()
+            self.content2 = None
+
+        # Create the color range.  There are clearly more elegant ways...
+        color = np.ones((self.rows, self.cols, 3))
+        orange = np.array([1.0, 0.5, 0.0])
+        for row in range(self.rows):
+            for col in range(self.cols):
+                if self.robot.world.is_wall(row, col):
+                    color[row,col,0:3] = np.array([0.0, 0.0, 0.0]) # Black
+                else:
+                    color[row,col,0:3] = np.array([1.0, 1.0, 1.0])   # White
+                # Overlay fire (orange tint) without replacing the underlying map
+                if self.robot.world.is_fire(row, col):
+                    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
+                #if has_fire and self.robot.world.is_fire(row, col):
+                #    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
+    
+        if showPath:
+            color[self.planner.goal.row, self.planner.goal.col, 0:3] = np.array([0.0, 1.0, 0.0])
+    
+        # Draw the boxes.
+        self.content2 = self.fig2.gca().imshow(color,
                                         aspect='equal',
                                         interpolation='none',
                                         extent=[0, self.cols, self.rows, 0],
                                         zorder=0)
     
     def updatepath(self):
-        if self.path is not None:
-            self.path.remove()
-            self.path = None
+        # Clear both paths
+        if self.path1 is not None:
+            self.path1.remove()
+            self.path1 = None
+        if self.path2 is not None:
+            self.path2.remove()
+            self.path2 = None
 
-        path = self.planner.get_path()
-        ys = []
-        xs = []
+        route = self.planner.get_path()
+        ys = [node.row + 0.5 for node in route]
+        xs = [node.col + 0.5 for node in route]
 
-        for node in path:
-            # +0.5 so it is in centre of square
-            ys.append(node.row+0.5)
-            xs.append(node.col+0.5)
+        plt.figure(self.fig1.number)
+        self.path1, = plt.plot(xs, ys, color=[0, 1, 0], linewidth=2)
 
-        self.path, = plt.plot(xs, ys, color=[0, 1, 0], linewidth=2)
+        plt.figure(self.fig2.number)
+        self.path2, = plt.plot(xs, ys, color=[0, 1, 0], linewidth=2)
+
 
     def show(self, msg = None, markRobot = False, showPath = False):
-        # Update the content.
+        plt.figure(1)
         self.updategrid(showPath)
-
-        # Potentially add the mark.
         self.updatemark(markRobot)
+
+        plt.figure(2)
+        self.update_true(showPath)
 
         if showPath:
             self.updatepath()
