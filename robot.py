@@ -91,11 +91,10 @@ class Robot():
             if self.world.is_wall(nr, nc) and random.random() < self.pSensor[k]:
                 self.adjust(nr, nc, self.lwall)  # mark wall
                 return k  # stop scanning beyond wall
-            elif self.world.is_fire(nr, nc):
+            if self.world.is_fire(nr, nc):
                 self.fire[nr, nc] = 1
                 return k
-            else:
-                self.adjust(nr, nc, -self.lfree)
+            self.adjust(nr, nc, -self.lfree)
         return len(self.pSensor)
     
     def sense_radar(self):
