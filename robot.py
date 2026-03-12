@@ -87,9 +87,10 @@ class Robot():
             if not (0 <= nr < self.world.rows and 0 <= nc < self.world.cols):
                 return k
 
-            # Check wall
-            if self.world.is_wall(nr, nc) and random.random() < self.pSensor[k]:
-                self.adjust(nr, nc, self.lwall)  # mark wall
+            # Check wall, scan always stops at the first wall, even if the sensor fails to detect it
+            if self.world.is_wall(nr, nc):
+                if random.random() < self.pSensor[k]: 
+                    self.adjust(nr, nc, self.lwall)  # mark wall
                 return k  # stop scanning beyond wall
             self.adjust(nr, nc, -self.lfree)
         return len(self.pSensor)
