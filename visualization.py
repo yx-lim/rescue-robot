@@ -29,6 +29,7 @@ class Visualization():
         # Save the walls, robot, and determine the rows/cols:
         self.walls = walls
         self.robot = robot
+        self.world = robot.world
         self.planner = planner
         self.spots = np.sum(np.logical_not(walls))
         self.rows  = np.size(walls, axis=0)
@@ -37,46 +38,54 @@ class Visualization():
         # Clear the current, or create a new figure.
         plt.clf()
 
-        # Create a new axes, enable the grid, and set axis limits.
-        plt.axes()
-        plt.grid(False)
-        plt.gca().axis('off')
-        plt.gca().set_aspect('equal')
-        plt.gca().set_xlim(0, self.cols)
-        plt.gca().set_ylim(self.rows, 0)
+        # Create two subplots: left = true world, right = robot belief.
+        self.fig, (self.ax_true, self.ax_belief) = plt.subplots(1, 2, figsize=(12, 6))
 
-        # Add the row/col numbers.
+        for ax in (self.ax_true, self.ax_belief):
+            ax.grid(False)
+            ax.axis('off')
+            ax.set_aspect('equal')
+            ax.set_xlim(0, self.cols)
+            ax.set_ylim(self.rows, 0)
+
+        self.ax_true.set_title("True world")
+        self.ax_belief.set_title("Robot belief")
+
+        # Add row/col numbers on the belief subplot (right).
         for row in range(0, self.rows, 2):
-            plt.gca().text(         -0.3, 0.6+row, '%d'%row,
-                           verticalalignment='center',
-                           horizontalalignment='right')
+            self.ax_belief.text(-0.3, 0.6+row, '%d'%row,
+                                verticalalignment='center',
+                                horizontalalignment='right')
         for row in range(1, self.rows, 2):
-            plt.gca().text(self.cols+0.3, 0.6+row, '%d'%row,
-                           verticalalignment='center',
-                           horizontalalignment='left')
+            self.ax_belief.text(self.cols+0.3, 0.6+row, '%d'%row,
+                                verticalalignment='center',
+                                horizontalalignment='left')
         for col in range(0, self.cols, 2):
-            plt.gca().text(0.5+col,          -0.3, '%d'%col,
-                           verticalalignment='bottom',
-                           horizontalalignment='center')
+            self.ax_belief.text(0.5+col, -0.3, '%d'%col,
+                                verticalalignment='bottom',
+                                horizontalalignment='center')
         for col in range(1, self.cols, 2):
-            plt.gca().text(0.5+col, self.rows+0.3, '%d'%col,
-                           verticalalignment='top',
-                           horizontalalignment='center')
+            self.ax_belief.text(0.5+col, self.rows+0.3, '%d'%col,
+                                verticalalignment='top',
+                                horizontalalignment='center')
 
         # Draw the grid, zorder 1 means draw after zorder 0 elements.
         for row in range(self.rows+1):
-            plt.gca().axhline(row, lw=1, color='k', zorder=1)
+            self.ax_belief.axhline(row, lw=1, color='k', zorder=1)
         for col in range(self.cols+1):
-            plt.gca().axvline(col, lw=1, color='k', zorder=1)
+            self.ax_belief.axvline(col, lw=1, color='k', zorder=1)
 
-        # Add the text.
-        plt.gca().text(0, 40, "Probability: Yellow==0%")
-        plt.gca().text(0, 42, "     White<=0.1%, Blue, Black=100%")
+        # Add the legend text on the belief subplot.
+        self.ax_belief.text(0, 40, "Probability: Yellow==0%")
+        self.ax_belief.text(0, 42, "     White<=0.1%, Blue, Black=100%")
 
         # Clear the content and mark.  Then show blank field.
-        self.content = None
+        self.content_true = None
+        self.content_belief = None
         self.mark    = None
         self.path    = None
+
+        self.fig.tight_layout()
         self.show()
 
     def flush(self):
@@ -98,61 +107,76 @@ class Visualization():
             assert (col >= 0) and (col < self.cols), "Illegal robot col"
 
             # Draw the mark.
-            self.mark  = plt.gca().text(0.5+col, 0.5+row, 'x', color = 'red',
-                                        verticalalignment='center',
-                                        horizontalalignment='center',
-                                        fontweight='bold',
-                                        zorder=1)
+            self.mark  = self.ax_belief.text(0.5+col, 0.5+row, 'x', color='red',
+                                             verticalalignment='center',
+                                             horizontalalignment='center',
+                                             fontweight='bold',
+                                             zorder=1)
 
     def logits_to_probs(self, logits):
         return 1 / (1 + np.exp(-logits))
 
-    def updategrid(self, showPath):
-        # Check the probability grid array size.
-        prob = self.logits_to_probs(self.robot.walls_logits)
-        if prob is not None:
-            assert np.size(prob, axis=0) == self.rows, "Inconsistent # of rows"
-            assert np.size(prob, axis=1) == self.cols, "Inconsistent # of cols"
-
-        # Potentially remove the previous grid/content.
-        if self.content is not None:
-            self.content.remove()
-            self.content = None
-
-        # Create the color range.  There are clearly more elegant ways...
+    def updategrid_true(self):
+        # True world: walls from self.walls, fire from self.world.is_fire.
         color = np.ones((self.rows, self.cols, 3))
-        # has_fire = hasattr(self.robot.world, 'is_fire')
+        for row in range(self.rows):
+            for col in range(self.cols):
+                if self.walls[row, col]:
+                    color[row, col, :] = np.array([0.0, 0.0, 0.0])  # true wall
+                else:
+                    color[row, col, :] = np.array([1.0, 1.0, 1.0])  # true free
+
+                if hasattr(self.world, "is_fire") and self.world.is_fire(row, col):
+                    color[row, col, :] = np.array([1.0, 0.0, 0.0])  # true fire
+
+        if self.content_true is not None:
+            self.content_true.remove()
+            self.content_true = None
+
+        self.content_true = self.ax_true.imshow(
+            color,
+            aspect='equal',
+            interpolation='none',
+            extent=[0, self.cols, self.rows, 0],
+            zorder=0,
+        )
+
+    def updategrid_belief(self, showPath):
+        # Robot belief: log-odds walls + perceived fire.
+        prob = self.logits_to_probs(self.robot.walls_logits)
+        assert np.size(prob, axis=0) == self.rows, "Inconsistent # of rows"
+        assert np.size(prob, axis=1) == self.cols, "Inconsistent # of cols"
+
+        if self.content_belief is not None:
+            self.content_belief.remove()
+            self.content_belief = None
+
+        color = np.ones((self.rows, self.cols, 3))
         orange = np.array([1.0, 0.5, 0.0])
         for row in range(self.rows):
             for col in range(self.cols):
-                if prob is None:
-                    color[row,col,0:3] = np.array([1.0, 1.0, 1.0])   # White
+                # Shades of blue. Yellow means impossible.
+                p = prob[row, col]
+                if p == 0:
+                    color[row, col, :] = np.array([1.0, 1.0, 0.0])   # yellow = impossible
                 else:
-                    # Shades of blue. Yellow means impossible.
-                    p    = prob[row,col]
-                    if p == 0:
-                        color[row,col,0:3] = np.array([1.0, 1.0, 0.0])   # yellow = impossible
-                    else:
-                        level = (1.0 - p)
-                        color[row,col,0:3] = np.array([level, level, 1])  # deeper blue for high prob
-                
-                # Overlay fire (orange tint) without replacing the underlying map
-                # ill keep for now only showing the robot's perception of fire, but will add 
-                # the true state later (it's in one of the to-dos)
+                    level = (1.0 - p)
+                    color[row, col, :] = np.array([level, level, 1.0])  # deeper blue for high prob
+
+                # Overlay perceived fire (orange tint).
                 if self.robot.fire[row, col]:
-                    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
-                #if has_fire and self.robot.world.is_fire(row, col):
-                #    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
-    
+                    color[row, col, :] = 0.6 * color[row, col, :] + 0.4 * orange
+
         if showPath:
-            color[self.planner.goal.row, self.planner.goal.col, 0:3] = np.array([0.0, 1.0, 0.0])
-    
-        # Draw the boxes.
-        self.content = plt.gca().imshow(color,
-                                        aspect='equal',
-                                        interpolation='none',
-                                        extent=[0, self.cols, self.rows, 0],
-                                        zorder=0)
+            color[self.planner.goal.row, self.planner.goal.col, :] = np.array([0.0, 1.0, 0.0])
+
+        self.content_belief = self.ax_belief.imshow(
+            color,
+            aspect='equal',
+            interpolation='none',
+            extent=[0, self.cols, self.rows, 0],
+            zorder=0,
+        )
     
     def updatepath(self):
         if self.path is not None:
@@ -168,11 +192,12 @@ class Visualization():
             ys.append(node.row+0.5)
             xs.append(node.col+0.5)
 
-        self.path, = plt.plot(xs, ys, color=[0, 1, 0], linewidth=2)
+        self.path, = self.ax_belief.plot(xs, ys, color=[0, 1, 0], linewidth=2)
 
     def show(self, msg = None, markRobot = False, showPath = False):
-        # Update the content.
-        self.updategrid(showPath)
+        # Update both true world and robot-belief content.
+        self.updategrid_true()
+        self.updategrid_belief(showPath)
 
         # Potentially add the mark.
         self.updatemark(markRobot)
