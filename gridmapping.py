@@ -12,7 +12,7 @@ from math import pi
 from visualization import Visualization
 from world import World
 from robot import Robot
-from planner import Planner
+from planner import PlannerDStarLite, PlannerTemporal
 
 #
 #  Define the Walls
@@ -109,7 +109,8 @@ FIRE_DT = 0.03
 def main():
     
     robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.7,0.7,0.7,0.5], thetainc=pi/20, lbound=10, lfree=0.2, lwall=0.5)
-    planner = Planner(robot, (5, 23), cost_uncertain=1, fire_multiplier=5)
+    # planner = PlannerDStarLite(robot, (5, 23), cost_uncertain=1, fire_multiplier=5)
+    planner = PlannerTemporal(robot, (5, 23), horizon=80, cost_uncertain=1, fire_multiplier=5, wait_cost=0.5)
 
     if world._num_ignition_points > 0:
         world.start_fire()
@@ -117,8 +118,14 @@ def main():
     # Initialize the figure.
     visual = Visualization(walls, robot, planner)
 
+    if isinstance(planner.goal, tuple):
+        goal_pos = planner.goal
+    else:
+        goal_pos = (planner.goal.row, planner.goal.col)
+
     # Loop continually or until goal is reached.
-    while not auto or planner.start != planner.goal:
+    # while not auto or planner.start != planner.goal:
+    while not auto or (robot.row, robot.col) != goal_pos:
         # Advance fire simulation (manual interval)
         if world._num_ignition_points > 0:
             world.step_fire(FIRE_DT)

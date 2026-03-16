@@ -1,12 +1,12 @@
 import numpy as np
-from math import inf
+from math import inf, sqrt
 import heapq
 from node import Node
 from robot import Robot
 from typing import Tuple
 
 
-class Planner():
+class PlannerDStarLite():
     def __init__(self,
                  robot: Robot, 
                  goal: Tuple[int, int],
@@ -17,102 +17,346 @@ class Planner():
         self.lfree = lfree if lfree else 1.5*robot.lstart
         self.cost_uncertain = cost_uncertain
         self.fire_multiplier = fire_multiplier
-        self.onDeck = []
-        self.km = 0
-        self.nodes = []
-        for row in range(robot.world.rows):
-            for col in range(robot.world.cols):
-                node = Node(row, col)
-                node.rhs = inf
-                node.g = inf
-                self.nodes.append(node)
-        # Create the neighbors, being the edges between the nodes.
-        for node in self.nodes:
-            for dr, dc in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1),]:
-                others = [n for n in self.nodes if (n.row, n.col) == (node.row + dr, node.col + dc)]
-                if len(others) > 0:
-                    node.neighbors.append(others[0])
-        start = (robot.row, robot.col)
-        self.start = [n for n in self.nodes if (n.row, n.col) == start][0]
-        self.goal = [n for n in self.nodes if (n.row, n.col) == goal][0]
-        self.goal.rhs = 0
-        heapq.heappush(self.onDeck, (self.calculate_key(self.goal), self.goal))
+
+        self.nodes = {}
+        for r in range(robot.world.rows):
+            for c in range(robot.world.cols):
+                self.nodes[(r, c)] = Node(r, c)
+
+        for (r, c), node in self.nodes.items():
+            for dr, dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]:
+                nr, nc = r + dr, c + dc
+                if (nr, nc) in self.nodes:
+                    node.neighbors.append(self.nodes[(nr, nc)])
+
+        self.start = self.nodes[(robot.row, robot.col)]
+        self.goal = self.nodes[goal]
         self.last = self.start
-        robot.sense_radar()
-        for node in self.nodes:
-            node.old_c = self.c(node)
+        self.km = 0
+
+        self.open = []
+        self.goal.rhs = 0
+        heapq.heappush(self.open, (self.calculate_key(self.goal), self.goal))
+
+        self.robot.sense_radar()
+        for node in self.nodes.values():
+            node.old_c = self.state_cost(node)
+
         self.compute_shortest_path()
 
-    def c(self, node: Node):
-        if self.robot.walls_logits[node.row, node.col] >= 0:
-            return inf
-        if self.robot.walls_logits[node.row, node.col] < self.lfree:
-            return 1.0 if not self.robot.fire[node.row, node.col] else self.fire_multiplier
-        return self.cost_uncertain if not self.robot.fire[node.row, node.col] else self.fire_multiplier*self.cost_uncertain
-    
-    def h(self, node1: Node, node2: Node):
-        return max(abs(node1.row - node2.row), abs(node1.col - node2.col))
+    def heuristic(self, a, b):
+        return max(abs(a.row - b.row), abs(a.col - b.col))
 
-    def calculate_key(self, s: Node):
-        return (min(s.g, s.rhs) + self.h(self.start, s) + self.km, min(s.g, s.rhs))
-    
-    def update_vertex(self, u: Node):
+    def state_cost(self, node):
+        # Entering node cost
+        logit = self.robot.walls_logits[node.row, node.col]
+        fire = self.robot.fire[node.row, node.col]
+
+        if logit >= 0:
+            return inf
+
+        if logit < self.lfree:
+            base = 1.0
+        else:
+            base = self.cost_uncertain
+
+        if fire:
+            base *= self.fire_multiplier
+
+        return base
+
+    def edge_cost(self, u, v):
+        # Can optionally include diagonal distance
+        step = np.sqrt(2) if (u.row != v.row and u.col != v.col) else 1.0
+        return step * self.state_cost(v)
+
+    def calculate_key(self, s):
+        m = min(s.g, s.rhs)
+        return (m + self.heuristic(self.start, s) + self.km, m)
+
+    def update_vertex(self, u):
         if u != self.goal:
-            u.rhs = min([self.c(s_dash) + s_dash.g for s_dash in u.neighbors])
-        self.onDeck = [(k, n) for k, n in self.onDeck if n is not u]
-        heapq.heapify(self.onDeck)
+            u.rhs = min((self.edge_cost(u, s) + s.g for s in u.neighbors), default=inf)
+
+        self.open = [(k, n) for (k, n) in self.open if n is not u]
+        heapq.heapify(self.open)
+
         if u.g != u.rhs:
-            heapq.heappush(self.onDeck, (self.calculate_key(u), u))
+            heapq.heappush(self.open, (self.calculate_key(u), u))
 
     def compute_shortest_path(self):
-        while len(self.onDeck) > 0 and (self.onDeck[0][0] < self.calculate_key(self.start) or self.start.rhs != self.start.g):
-            k_old, u = heapq.heappop(self.onDeck)
-            k = self.calculate_key(u)
-            if k_old < k:
-                heapq.heappush(self.onDeck, (k, u))
+        while self.open and (
+            self.open[0][0] < self.calculate_key(self.start) or self.start.g != self.start.rhs
+        ):
+            k_old, u = heapq.heappop(self.open)
+            k_new = self.calculate_key(u)
+
+            if k_old < k_new:
+                heapq.heappush(self.open, (k_new, u))
             elif u.g > u.rhs:
                 u.g = u.rhs
-                for s in u.neighbors:
-                    self.update_vertex(s)
+                for p in u.neighbors:
+                    self.update_vertex(p)
             else:
                 u.g = inf
-                for s in u.neighbors + [u]:
-                    self.update_vertex(s)
+                self.update_vertex(u)
+                for p in u.neighbors:
+                    self.update_vertex(p)
 
     def step(self):
         if self.start == self.goal:
             return 1
         if self.start.g == inf:
             return -1
-        idx = np.argmin([self.c(s_dash) + s_dash.g for s_dash in self.start.neighbors])
-        next_node = self.start.neighbors[idx]
-        drow = next_node.row - self.robot.row
-        dcol = next_node.col - self.robot.col
-        if self.robot.command(drow, dcol):
-            self.start = next_node
+
+        best = min(self.start.neighbors, key=lambda s: self.edge_cost(self.start, s) + s.g)
+        drow = best.row - self.robot.row
+        dcol = best.col - self.robot.col
+
+        moved = self.robot.command(drow, dcol)
         self.robot.sense_radar()
-        changed = False
-        for node in self.nodes:
-            if self.c(node) != node.old_c:
-                if not changed:
-                    self.km += self.h(self.last, self.start)
-                    self.last = self.start
-                    changed = True
-                node.old_c = self.c(node)
-                for neighbor in node.neighbors:
-                    self.update_vertex(neighbor)
+
+        new_start = self.nodes[(self.robot.row, self.robot.col)]
+
+        if moved:
+            self.km += self.heuristic(self.last, new_start)
+            self.last = new_start
+            self.start = new_start
+
+        changed_nodes = []
+        for node in self.nodes.values():
+            new_c = self.state_cost(node)
+            if new_c != node.old_c:
+                node.old_c = new_c
+                changed_nodes.append(node)
+
+        for node in changed_nodes:
+            self.update_vertex(node)
+            for nbr in node.neighbors:
+                self.update_vertex(nbr)
+
         self.compute_shortest_path()
-    
-    def get_path(self):
-        path = []
+        return 0
+
+    def get_path(self, max_len=500):
+        if self.start.g == inf:
+            return []
+
+        path = [self.start]
         curr = self.start
-        while curr != self.goal:
-            costs = [self.c(n)+ n.g for n in curr.neighbors]
-            next = curr.neighbors[np.argmin(costs)]
-            path.append(next)
-            curr = next
+        visited = {(curr.row, curr.col)}
+
+        for _ in range(max_len):
+            if curr == self.goal:
+                break
+            if not curr.neighbors:
+                return path
+            curr = min(curr.neighbors, key=lambda s: self.edge_cost(curr, s) + s.g)
+            if (curr.row, curr.col) in visited:
+                break
+            visited.add((curr.row, curr.col))
+            path.append(curr)
 
         return path
 
 
-    
+
+
+class PlannerTemporal:
+    def __init__(self,
+                 robot,
+                 goal,
+                 horizon=20,
+                 lfree=None,
+                 cost_uncertain=1.0,
+                 fire_multiplier=20.0,
+                 wait_cost=0.5):
+        self.robot = robot
+        self.goal = goal                  # tuple: (goal_row, goal_col)
+        self.horizon = horizon
+        self.lfree = lfree if lfree is not None else 1.5 * robot.lstart
+        self.cost_uncertain = cost_uncertain
+        self.fire_multiplier = fire_multiplier
+        self.wait_cost = wait_cost
+
+        self.last_path = []
+
+        # 8-neighborhood + wait
+        self.moves = [
+            (-1, -1), (-1, 0), (-1, 1),
+            ( 0, -1), ( 0, 0), ( 0, 1),
+            ( 1, -1), ( 1, 0), ( 1, 1),
+        ]
+
+        # Do an initial sense so walls/fire beliefs are populated
+        self.robot.sense_radar()
+
+    def heuristic(self, r, c, t):
+        gr, gc = self.goal
+        # Chebyshev distance is fine for 8-connected grids
+        return max(abs(r - gr), abs(c - gc))
+
+    def cell_cost(self, r, c, t, fire_pred):
+        # Occupancy belief from robot map
+        logit = self.robot.walls_logits[r, c]
+
+        # believed wall => blocked
+        if logit >= 0:
+            return inf
+
+        # free vs uncertain
+        base = 1.0 if logit < self.lfree else self.cost_uncertain
+
+        # predicted fire penalty
+        if fire_pred[t, r, c]:
+            base *= self.fire_multiplier
+
+        return base
+
+    def step_cost(self, dr, dc, r, c, t, fire_pred):
+        if dr == 0 and dc == 0:
+            move_len = self.wait_cost
+        elif dr != 0 and dc != 0:
+            move_len = sqrt(2)
+        else:
+            move_len = 1.0
+
+        return move_len * self.cell_cost(r, c, t, fire_pred)
+
+    def predict_fire(self):
+        """
+        Predict future fire occupancy over time using the CURRENT TRUE WORLD fire state.
+        This is the most reliable way to get a temporal planner moving properly.
+        """
+        rows, cols = self.robot.world.rows, self.robot.world.cols
+        fire_pred = np.zeros((self.horizon + 1, rows, cols), dtype=np.uint8)
+
+        # Start from CURRENT true world fire, not stale robot.fire only
+        for r in range(rows):
+            for c in range(cols):
+                fire_pred[0, r, c] = 1 if self.robot.world.is_fire(r, c) else 0
+
+        neighbors = [(-1,-1), (-1,0), (-1,1),
+                     (0,-1),          (0,1),
+                     (1,-1),  (1,0),  (1,1)]
+
+        # Simple forward prediction:
+        # fire continues and spreads outward
+        for t in range(self.horizon):
+            fire_pred[t + 1] = fire_pred[t].copy()
+            burning = np.argwhere(fire_pred[t] > 0)
+
+            for r, c in burning:
+                for dr, dc in neighbors:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < rows and 0 <= nc < cols:
+                        fire_pred[t + 1, nr, nc] = 1
+
+        return fire_pred
+
+    def plan(self):
+        fire_pred = self.predict_fire()
+
+        start = (self.robot.row, self.robot.col, 0)
+        goal_rc = self.goal
+
+        open_heap = []
+        heapq.heappush(open_heap, (self.heuristic(*start), 0.0, start))
+
+        parent = {}
+        gscore = {start: 0.0}
+        visited = set()
+
+        best_goal_state = None
+
+        while open_heap:
+            _, g, state = heapq.heappop(open_heap)
+            r, c, t = state
+
+            if state in visited:
+                continue
+            visited.add(state)
+
+            if (r, c) == goal_rc:
+                best_goal_state = state
+                break
+
+            if t >= self.horizon:
+                continue
+
+            for dr, dc in self.moves:
+                nr, nc, nt = r + dr, c + dc, t + 1
+
+                if not (0 <= nr < self.robot.world.rows and 0 <= nc < self.robot.world.cols):
+                    continue
+
+                # hard block on believed walls
+                if self.robot.walls_logits[nr, nc] >= 0:
+                    continue
+
+                cst = self.step_cost(dr, dc, nr, nc, nt, fire_pred)
+                if cst == inf:
+                    continue
+
+                ng = g + cst
+                nxt = (nr, nc, nt)
+
+                if nxt not in gscore or ng < gscore[nxt]:
+                    gscore[nxt] = ng
+                    parent[nxt] = state
+                    f = ng + self.heuristic(nr, nc, nt)
+                    heapq.heappush(open_heap, (f, ng, nxt))
+
+        if best_goal_state is None:
+            self.last_path = []
+            return []
+
+        # reconstruct (row, col, t) path
+        path = []
+        cur = best_goal_state
+        while cur in parent:
+            path.append(cur)
+            cur = parent[cur]
+        path.append(start)
+        path.reverse()
+
+        self.last_path = path
+        return path
+
+    def step(self):
+        # already at goal
+        if (self.robot.row, self.robot.col) == self.goal:
+            return 1
+
+        # update sensing before planning
+        self.robot.sense_radar()
+
+        path = self.plan()
+
+        # no feasible path
+        if len(path) <= 1:
+            return -1
+
+        # take the next temporal step as a real robot move
+        nr, nc, _ = path[1]
+        drow = nr - self.robot.row
+        dcol = nc - self.robot.col
+
+        moved = self.robot.command(drow, dcol)
+
+        # refresh sensing after motion attempt
+        self.robot.sense_radar()
+
+        if (self.robot.row, self.robot.col) == self.goal:
+            return 1
+
+        # if move failed but planner suggested something, just continue next cycle
+        return 0 if moved or len(path) > 1 else -1
+
+    def get_path(self):
+        """
+        Return path in a visualization-friendly format: list of (row, col).
+        """
+        if not self.last_path:
+            self.plan()
+        return [(r, c) for (r, c, t) in self.last_path]

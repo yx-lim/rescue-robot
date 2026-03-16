@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from planner import Planner
+from planner import PlannerDStarLite, PlannerTemporal
 from robot import Robot
 
 
@@ -25,7 +25,7 @@ from robot import Robot
 #   should be overlayed with an 'x'.
 #
 class Visualization():
-    def __init__(self, walls, robot: Robot, planner: Planner):
+    def __init__(self, walls, robot: Robot, planner: PlannerDStarLite | PlannerTemporal):
         # Save the walls, robot, and determine the rows/cols:
         self.walls = walls
         self.robot = robot
@@ -56,43 +56,68 @@ class Visualization():
     def _setup_figure(self, fig, title):
         # Clear the current, or create a new figure.
         fig.clf()
+        ax = fig.gca()
+        ax.grid(False)
+        ax.set_title(title, y=1.05)
+        ax.axis("off")
+        ax.set_aspect("equal")
+        ax.set_xlim(0, self.cols)
+        ax.set_ylim(self.rows, 0)
 
-        # Create a new axes, enable the grid, and set axis limits.
-        fig.gca().grid(False)
-        fig.gca().set_title(title, y=1.05)
-        fig.gca().axis('off')
-        fig.gca().set_aspect('equal')
-        fig.gca().set_xlim(0, self.cols)
-        fig.gca().set_ylim(self.rows, 0)
-
-        # Add the row/col numbers.
         for row in range(0, self.rows, 2):
-            fig.gca().text(         -0.3, 0.6+row, '%d'%row,
-                           verticalalignment='center',
-                           horizontalalignment='right')
+            ax.text(-0.3, 0.6 + row, f"{row}",
+                    verticalalignment="center",
+                    horizontalalignment="right")
         for row in range(1, self.rows, 2):
-            fig.gca().text(self.cols+0.3, 0.6+row, '%d'%row,
-                           verticalalignment='center',
-                           horizontalalignment='left')
+            ax.text(self.cols + 0.3, 0.6 + row, f"{row}",
+                    verticalalignment="center",
+                    horizontalalignment="left")
         for col in range(0, self.cols, 2):
-            fig.gca().text(0.5+col,          -0.3, '%d'%col,
-                           verticalalignment='bottom',
-                           horizontalalignment='center')
+            ax.text(0.5 + col, -0.3, f"{col}",
+                    verticalalignment="bottom",
+                    horizontalalignment="center")
         for col in range(1, self.cols, 2):
-            fig.gca().text(0.5+col, self.rows+0.3, '%d'%col,
-                           verticalalignment='top',
-                           horizontalalignment='center')
-            
-        # Draw the grid, zorder 1 means draw after zorder 0 elements.
-        for row in range(self.rows+1):
-            fig.gca().axhline(row, lw=1, color='k', zorder=1)
-        for col in range(self.cols+1):
-            fig.gca().axvline(col, lw=1, color='k', zorder=1)
+            ax.text(0.5 + col, self.rows + 0.3, f"{col}",
+                    verticalalignment="top",
+                    horizontalalignment="center")
 
+        for row in range(self.rows + 1):
+            ax.axhline(row, lw=1, color="k", zorder=1)
+        for col in range(self.cols + 1):
+            ax.axvline(col, lw=1, color="k", zorder=1)
 
     def flush(self):
-        # Show the plot.
-        plt.pause(0.3)
+        plt.pause(0.05)
+
+    def logits_to_probs(self, logits):
+        return 1.0 / (1.0 + np.exp(-logits))
+
+    def _goal_pos(self):
+        goal = self.planner.goal
+        if hasattr(goal, "row") and hasattr(goal, "col"):
+            return goal.row, goal.col
+        if isinstance(goal, tuple) and len(goal) >= 2:
+            return goal[0], goal[1]
+        raise ValueError("Planner goal format not supported.")
+
+    def _route_to_xy(self, route):
+        xs, ys = [], []
+
+        for state in route:
+            if hasattr(state, "row") and hasattr(state, "col"):
+                r, c = state.row, state.col
+            elif isinstance(state, tuple):
+                if len(state) >= 2:
+                    r, c = state[0], state[1]
+                else:
+                    continue
+            else:
+                continue
+
+            xs.append(c + 0.5)
+            ys.append(r + 0.5)
+
+        return xs, ys
 
     def updatemark(self, markRobot=True):
         # Clear/potentially remove the previous mark.
@@ -111,30 +136,33 @@ class Visualization():
             assert (row >= 0) and (row < self.rows), "Illegal robot row"
             assert (col >= 0) and (col < self.cols), "Illegal robot col"
 
-            # Draw the mark.
-            self.mark1  = self.fig1.gca().text(0.5+col, 0.5+row, 'x', color = 'red',
-                                        verticalalignment='center',
-                                        horizontalalignment='center',
-                                        fontweight='bold',
-                                        zorder=1)
-            
-            self.mark2  = self.fig2.gca().text(0.5+col, 0.5+row, 'x', color = 'red',
-                                        verticalalignment='center',
-                                        horizontalalignment='center',
-                                        fontweight='bold',
-                                        zorder=1)
+            assert 0 <= row < self.rows, "Illegal robot row"
+            assert 0 <= col < self.cols, "Illegal robot col"
 
-    def logits_to_probs(self, logits):
-        return 1 / (1 + np.exp(-logits))
+            self.mark1 = self.fig1.gca().text(
+                0.5 + col, 0.5 + row, "x",
+                color="red",
+                verticalalignment="center",
+                horizontalalignment="center",
+                fontweight="bold",
+                zorder=3
+            )
+
+            self.mark2 = self.fig2.gca().text(
+                0.5 + col, 0.5 + row, "x",
+                color="red",
+                verticalalignment="center",
+                horizontalalignment="center",
+                fontweight="bold",
+                zorder=3
+            )
 
     def updategrid(self, showPath):
-        # Check the probability grid array size.
         prob = self.logits_to_probs(self.robot.walls_logits)
-        if prob is not None:
-            assert np.size(prob, axis=0) == self.rows, "Inconsistent # of rows"
-            assert np.size(prob, axis=1) == self.cols, "Inconsistent # of cols"
 
-        # Potentially remove the previous grid/content.
+        assert np.size(prob, axis=0) == self.rows, "Inconsistent # of rows"
+        assert np.size(prob, axis=1) == self.cols, "Inconsistent # of cols"
+
         if self.content1 is not None:
             self.content1.remove()
             self.content1 = None
@@ -145,74 +173,60 @@ class Visualization():
         orange = np.array([1.0, 0.5, 0.0])
         for row in range(self.rows):
             for col in range(self.cols):
-                if prob is None:
-                    color[row,col,0:3] = np.array([1.0, 1.0, 1.0])   # White
-                else:
-                    # Shades of blue. Yellow means impossible.
-                    p    = prob[row,col]
-                    if p == 0:
-                        color[row,col,0:3] = np.array([1.0, 1.0, 0.0])   # yellow = impossible
-                    else:
-                        level = (1.0 - p)
-                        color[row,col,0:3] = np.array([level, level, 1])  # deeper blue for high prob
-                
-                # Overlay fire (orange tint) without replacing the underlying map
-                # ill keep for now only showing the robot's perception of fire, but will add 
-                # the true state later (it's in one of the to-dos)
-                if self.robot.fire[row, col]:
-                    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
-                #if has_fire and self.robot.world.is_fire(row, col):
-                #    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
-    
-        if showPath:
-            color[self.planner.goal.row, self.planner.goal.col, 0:3] = np.array([0.0, 1.0, 0.0])
-    
-        # Draw the boxes.
-        self.content1 = self.fig1.gca().imshow(color,
-                                        aspect='equal',
-                                        interpolation='none',
-                                        extent=[0, self.cols, self.rows, 0],
-                                        zorder=0)
-        
-    def update_true(self, showPath):
-        # Check the probability grid array size.
-        prob = self.logits_to_probs(self.robot.walls_logits)
-        if prob is not None:
-            assert np.size(prob, axis=0) == self.rows, "Inconsistent # of rows"
-            assert np.size(prob, axis=1) == self.cols, "Inconsistent # of cols"
+                p = prob[row, col]
 
-        # Potentially remove the previous grid/content.
+                if p == 0:
+                    color[row, col, :] = np.array([1.0, 1.0, 0.0])   # yellow
+                else:
+                    level = 1.0 - p
+                    color[row, col, :] = np.array([level, level, 1])  # blue tint
+
+                if self.robot.fire[row, col]:
+                    color[row, col, :] = 0.6 * color[row, col, :] + 0.4 * orange
+
+        if showPath:
+            goal_row, goal_col = self._goal_pos()
+            color[goal_row, goal_col, :] = np.array([0.0, 1.0, 0.0])
+
+        self.content1 = self.fig1.gca().imshow(
+            color,
+            aspect="equal",
+            interpolation="none",
+            extent=[0, self.cols, self.rows, 0],
+            zorder=0
+        )
+
+    def update_true(self, showPath):
         if self.content2 is not None:
             self.content2.remove()
             self.content2 = None
 
-        # Create the color range.  There are clearly more elegant ways...
         color = np.ones((self.rows, self.cols, 3))
         orange = np.array([1.0, 0.5, 0.0])
+
         for row in range(self.rows):
             for col in range(self.cols):
                 if self.robot.world.is_wall(row, col):
-                    color[row,col,0:3] = np.array([0.0, 0.0, 0.0]) # Black
+                    color[row, col, :] = np.array([0.0, 0.0, 0.0])
                 else:
-                    color[row,col,0:3] = np.array([1.0, 1.0, 1.0])   # White
-                # Overlay fire (orange tint) without replacing the underlying map
+                    color[row, col, :] = np.array([1.0, 1.0, 1.0])
+
                 if self.robot.world.is_fire(row, col):
-                    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
-                #if has_fire and self.robot.world.is_fire(row, col):
-                #    color[row, col, 0:3] = 0.6 * color[row, col, 0:3] + 0.4 * orange
-    
+                    color[row, col, :] = 0.6 * color[row, col, :] + 0.4 * orange
+
         if showPath:
-            color[self.planner.goal.row, self.planner.goal.col, 0:3] = np.array([0.0, 1.0, 0.0])
-    
-        # Draw the boxes.
-        self.content2 = self.fig2.gca().imshow(color,
-                                        aspect='equal',
-                                        interpolation='none',
-                                        extent=[0, self.cols, self.rows, 0],
-                                        zorder=0)
-    
+            goal_row, goal_col = self._goal_pos()
+            color[goal_row, goal_col, :] = np.array([0.0, 1.0, 0.0])
+
+        self.content2 = self.fig2.gca().imshow(
+            color,
+            aspect="equal",
+            interpolation="none",
+            extent=[0, self.cols, self.rows, 0],
+            zorder=0
+        )
+
     def updatepath(self):
-        # Clear both paths
         if self.path1 is not None:
             self.path1.remove()
             self.path1 = None
@@ -221,32 +235,29 @@ class Visualization():
             self.path2 = None
 
         route = self.planner.get_path()
-        ys = [node.row + 0.5 for node in route]
-        xs = [node.col + 0.5 for node in route]
+        if not route:
+            return
 
+        xs, ys = self._route_to_xy(route)
+        if len(xs) == 0:
+            return
+
+        self.path1, = self.fig1.gca().plot(xs, ys, color=[0, 1, 0], linewidth=2, zorder=2)
+        self.path2, = self.fig2.gca().plot(xs, ys, color=[0, 1, 0], linewidth=2, zorder=2)
+
+    def show(self, msg=None, markRobot=False, showPath=False):
         plt.figure(self.fig1.number)
-        self.path1, = plt.plot(xs, ys, color=[0, 1, 0], linewidth=2)
-
-        plt.figure(self.fig2.number)
-        self.path2, = plt.plot(xs, ys, color=[0, 1, 0], linewidth=2)
-
-
-    def show(self, msg = None, markRobot = False, showPath = False):
-        plt.figure(1)
         self.updategrid(showPath)
         self.updatemark(markRobot)
 
-        plt.figure(2)
+        plt.figure(self.fig2.number)
         self.update_true(showPath)
+        self.updatemark(markRobot)
 
         if showPath:
             self.updatepath()
 
-        # Flush the figure.
         self.flush()
 
-        # Optionally display a message and wait for confirmation.
         if msg:
             input(msg)
-
-
