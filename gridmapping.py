@@ -110,6 +110,7 @@ def main():
     
     robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.7,0.7,0.7,0.5], thetainc=pi/20, lbound=10, lfree=0.2, lwall=0.5)
     
+    # UNCOMMENT THE PLANNER YOU WANT TO USE
     # adjust horizon (max future time considered, horizon=10 means predict 10 steps ahead)
     planner = PlannerTemporal(robot, (5, 23), horizon=80, cost_uncertain=1, fire_multiplier=5, wait_cost=0.5)
     # planner = PlannerDStarLite(robot, (5, 23), cost_uncertain=1, fire_multiplier=5)
