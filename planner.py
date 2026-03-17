@@ -505,7 +505,7 @@ class PlannerLPAStar:
 
     def state_cost(self, node):
         logit = self.robot.walls_logits[node.row, node.col]
-        fire  = self.robot.fire[node.row, node.col]
+        fire  = self.robot.world.is_fire(node.row, node.col)
         if logit >= 0:
             return inf
         base = 1.0 if logit < self.lfree else self.cost_uncertain
@@ -564,12 +564,6 @@ class PlannerLPAStar:
     def step(self):
         if (self.robot.row, self.robot.col) == (self.goal.row, self.goal.col):
             return 1
-
-        # Sync fire map with true world state.
-        for r in range(self.robot.world.rows):
-            for c in range(self.robot.world.cols):
-                if self.robot.fire[r, c] and not self.robot.world.is_fire(r, c):
-                    self.robot.fire[r, c] = 0
 
         self.robot.sense_radar()
 
