@@ -51,7 +51,7 @@ class PlannerDStarLite():
     def state_cost(self, node):
         # Entering node cost
         logit = self.robot.walls_logits[node.row, node.col]
-        fire = self.robot.fire[node.row, node.col]
+        fire = self.robot.world.is_fire(node.row, node.col)
 
         if logit >= 0:
             return inf
@@ -181,6 +181,8 @@ class PlannerTemporal:
         self.wait_cost = wait_cost
 
         self.last_path = []
+        self.last_true_fire = None
+        self.fire_pred = None
 
         # 8-neighborhood + wait
         self.moves = [
@@ -191,13 +193,16 @@ class PlannerTemporal:
 
         # Do an initial sense so walls/fire beliefs are populated
         self.robot.sense_radar()
+        current_fire = self.capture_true_fire()
+        self.last_true_fire = current_fire.copy()
+        self.predict_fire(current_fire)
 
     def heuristic(self, r, c, t):
         gr, gc = self.goal
         # Chebyshev distance is fine for 8-connected grids
         return max(abs(r - gr), abs(c - gc))
 
-    def cell_cost(self, r, c, t, fire_pred):
+    def cell_cost(self, r, c, t):
         # Occupancy belief from robot map
         logit = self.robot.walls_logits[r, c]
 
@@ -209,12 +214,12 @@ class PlannerTemporal:
         base = 1.0 if logit < self.lfree else self.cost_uncertain
 
         # predicted fire penalty
-        if fire_pred[t, r, c]:
+        if self.fire_pred[t, r, c]:
             base *= self.fire_multiplier
 
         return base
 
-    def step_cost(self, dr, dc, r, c, t, fire_pred):
+    def step_cost(self, dr, dc, r, c, t):
         if dr == 0 and dc == 0:
             move_len = self.wait_cost
         elif dr != 0 and dc != 0:
@@ -222,41 +227,96 @@ class PlannerTemporal:
         else:
             move_len = 1.0
 
-        return move_len * self.cell_cost(r, c, t, fire_pred)
+        return move_len * self.cell_cost(r, c, t)
 
-    def predict_fire(self):
-        """
-        Predict future fire occupancy over time using the CURRENT TRUE WORLD fire state.
-        This is the most reliable way to get a temporal planner moving properly.
-        """
+    def capture_true_fire(self):
         rows, cols = self.robot.world.rows, self.robot.world.cols
-        fire_pred = np.zeros((self.horizon + 1, rows, cols), dtype=np.uint8)
-
-        # Start from CURRENT true world fire, not stale robot.fire only
+        fire = np.zeros((rows, cols), dtype=np.uint8)
         for r in range(rows):
             for c in range(cols):
-                fire_pred[0, r, c] = 1 if self.robot.world.is_fire(r, c) else 0
+                fire[r, c] = 1 if self.robot.world.is_fire(r, c) else 0
+        return fire
 
+    def predict_fire(self, current_fire, spread_prob=0.003, burnout_prob=0.0005, changed_mask=None):
+        """
+        Predict future fire occupancy over time.
+        spread_prob: probability that fire spreads to a neighbor cell
+        burnout_prob: probability that a burning cell goes out
+        """
+        rows, cols = self.robot.world.rows, self.robot.world.cols
         neighbors = [(-1,-1), (-1,0), (-1,1),
                      (0,-1),          (0,1),
                      (1,-1),  (1,0),  (1,1)]
 
-        # Simple forward prediction:
-        # fire continues and spreads outward
-        for t in range(self.horizon):
-            fire_pred[t + 1] = fire_pred[t].copy()
-            burning = np.argwhere(fire_pred[t] > 0)
+        if self.fire_pred is None or changed_mask is None or not np.any(changed_mask):
+            self.fire_pred = np.zeros((self.horizon + 1, rows, cols), dtype=np.uint8)
+            self.fire_pred[0] = current_fire
 
-            for r, c in burning:
+            for t in range(self.horizon):
+                self.fire_pred[t + 1] = self.fire_pred[t].copy()
+                burning = np.argwhere(self.fire_pred[t] > 0)
+
+                for r, c in burning:
+                    if np.random.random() < burnout_prob:
+                        self.fire_pred[t + 1, r, c] = 0
+                        continue
+
+                    for dr, dc in neighbors:
+                        nr, nc = r + dr, c + dc
+                        if 0 <= nr < rows and 0 <= nc < cols:
+                            if not self.fire_pred[t + 1, nr, nc] and np.random.random() < spread_prob:
+                                self.fire_pred[t + 1, nr, nc] = 1
+            return
+
+        new_pred = self.fire_pred.copy()
+        new_pred[0] = current_fire
+        dirty_mask = changed_mask.astype(bool)
+
+        for t in range(self.horizon):
+            if not np.any(dirty_mask):
+                break
+
+            layer = new_pred[t]
+            next_layer = new_pred[t + 1].copy()
+            next_dirty = np.zeros_like(dirty_mask, dtype=bool)
+
+            for r, c in np.argwhere(dirty_mask & (layer > 0)):
+                if np.random.random() < burnout_prob:
+                    next_layer[r, c] = 0
+                    next_dirty[r, c] = True
+                else:
+                    next_layer[r, c] = 1
+                    next_dirty[r, c] = True
+
                 for dr, dc in neighbors:
                     nr, nc = r + dr, c + dc
-                    if 0 <= nr < rows and 0 <= nc < cols:
-                        fire_pred[t + 1, nr, nc] = 1
+                    if not (0 <= nr < rows and 0 <= nc < cols):
+                        continue
+                    if next_layer[nr, nc]:
+                        continue
+                    if np.random.random() < spread_prob:
+                        next_layer[nr, nc] = 1
+                        next_dirty[nr, nc] = True
 
-        return fire_pred
+            new_pred[t + 1] = next_layer
+            dirty_mask = next_dirty
+
+        self.fire_pred = new_pred
 
     def plan(self):
-        fire_pred = self.predict_fire()
+        if self.fire_pred is not None:
+            self.fire_pred[:-1] = self.fire_pred[1:]
+            self.fire_pred[-1] = self.fire_pred[-2]
+
+        current_fire = self.capture_true_fire()
+        if self.last_true_fire is None:
+            changed_mask = None
+        else:
+            changed_mask = current_fire != self.last_true_fire
+        need_resample = self.fire_pred is None or changed_mask is None or np.any(changed_mask)
+        if need_resample:
+            self.predict_fire(current_fire, changed_mask=changed_mask)
+        self.last_true_fire = current_fire.copy()
 
         start = (self.robot.row, self.robot.col, 0)
         goal_rc = self.goal
@@ -295,7 +355,7 @@ class PlannerTemporal:
                 if self.robot.walls_logits[nr, nc] >= 0:
                     continue
 
-                cst = self.step_cost(dr, dc, nr, nc, nt, fire_pred)
+                cst = self.step_cost(dr, dc, nr, nc, nt)
                 if cst == inf:
                     continue
 
@@ -338,11 +398,19 @@ class PlannerTemporal:
         if len(path) <= 1:
             return -1
 
-        # take the next temporal step as a real robot move
-        nr, nc, _ = path[1]
+        # take the next temporal step as a real robot move that actually changes position
+        next_move = None
+        for nr, nc, _ in path[1:]:
+            if (nr, nc) != (self.robot.row, self.robot.col):
+                next_move = (nr, nc)
+                break
+
+        if next_move is None:
+            return -1
+
+        nr, nc = next_move
         drow = nr - self.robot.row
         dcol = nc - self.robot.col
-
         moved = self.robot.command(drow, dcol)
 
         # refresh sensing after motion attempt
@@ -437,7 +505,7 @@ class PlannerLPAStar:
 
     def state_cost(self, node):
         logit = self.robot.walls_logits[node.row, node.col]
-        fire  = self.robot.fire[node.row, node.col]
+        fire  = self.robot.world.is_fire(node.row, node.col)
         if logit >= 0:
             return inf
         base = 1.0 if logit < self.lfree else self.cost_uncertain
@@ -496,12 +564,6 @@ class PlannerLPAStar:
     def step(self):
         if (self.robot.row, self.robot.col) == (self.goal.row, self.goal.col):
             return 1
-
-        # Sync fire map with true world state.
-        for r in range(self.robot.world.rows):
-            for c in range(self.robot.world.cols):
-                if self.robot.fire[r, c] and not self.robot.world.is_fire(r, c):
-                    self.robot.fire[r, c] = 0
 
         self.robot.sense_radar()
 
