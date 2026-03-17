@@ -1,6 +1,7 @@
 import numpy as np
 from math import inf, sqrt
 import heapq
+from collections import deque
 from node import Node
 from robot import Robot
 from typing import Tuple
@@ -360,3 +361,225 @@ class PlannerTemporal:
         if not self.last_path:
             self.plan()
         return [(r, c) for (r, c, t) in self.last_path]
+
+
+class PlannerLPAStar:
+    def __init__(self, robot, goal, lfree=None, cost_uncertain=1.0, fire_multiplier=5.0):
+        self.robot = robot
+        self.goal_pos = goal
+        self.lfree = lfree if lfree is not None else 1.5 * robot.lstart
+        self.cost_uncertain = cost_uncertain
+        self.fire_multiplier = fire_multiplier
+
+        self._revisit_penalty = 2.0
+        self._recent_positions = deque(maxlen=10)
+        self._recent_positions.append((robot.row, robot.col))
+        self._last_pos = None
+
+        self.nodes = {}
+        for r in range(robot.world.rows):
+            for c in range(robot.world.cols):
+                self.nodes[(r, c)] = Node(r, c)
+
+        for (r, c), node in self.nodes.items():
+            for dr, dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]:
+                nr, nc = r + dr, c + dc
+                if (nr, nc) in self.nodes:
+                    node.neighbors.append(self.nodes[(nr, nc)])
+
+        self.goal = self.nodes[goal]
+
+        # Lazy-deletion open list.
+        self.open = []
+        self._node_version = {n: 0 for n in self.nodes.values()}
+
+        self.robot.sense_radar()
+        self._initialize_search()
+
+
+    def _initialize_search(self):
+        for node in self.nodes.values():
+            node.g   = inf
+            node.rhs = inf
+            node.old_c = self.state_cost(node)
+            node.parent = None
+
+        # Forward LPA*: seed is the START, not the goal.
+        self.start = self.nodes[(self.robot.row, self.robot.col)]
+        self.start.rhs = 0
+        self._push(self.start)
+        self.compute_shortest_path()
+
+    def _push(self, node):
+        self._node_version[node] += 1
+        heapq.heappush(
+            self.open,
+            (self.calculate_key(node), self._node_version[node], node)
+        )
+
+    def _pop(self):
+        while self.open:
+            key, ver, node = heapq.heappop(self.open)
+            if ver == self._node_version[node]:
+                return key, node
+        return None, None
+
+    def _peek_key(self):
+        while self.open:
+            key, ver, node = self.open[0]
+            if ver == self._node_version[node]:
+                return key
+            heapq.heappop(self.open)
+        return (inf, inf)
+
+    def heuristic(self, a, b):
+        return max(abs(a.row - b.row), abs(a.col - b.col))
+
+    def state_cost(self, node):
+        logit = self.robot.walls_logits[node.row, node.col]
+        fire  = self.robot.fire[node.row, node.col]
+        if logit >= 0:
+            return inf
+        base = 1.0 if logit < self.lfree else self.cost_uncertain
+        if fire:
+            base *= self.fire_multiplier
+        return base
+
+    def edge_cost(self, u, v):
+        step = np.sqrt(2) if (u.row != v.row and u.col != v.col) else 1.0
+        return step * self.state_cost(v)
+
+    def calculate_key(self, s):
+        # Forward search: heuristic is distance to the GOAL.
+        m = min(s.g, s.rhs)
+        return (m + self.heuristic(s, self.goal), m)
+
+    def update_vertex(self, u):
+        if u != self.start:
+            best_rhs    = inf
+            best_parent = None
+            # Forward search: rhs(u) = min over predecessors p of
+            #   g(p) + edge_cost(p, u)
+            # On an undirected grid every neighbor is a valid predecessor.
+            for p in u.neighbors:
+                cand = p.g + self.edge_cost(p, u)
+                if cand < best_rhs:
+                    best_rhs    = cand
+                    best_parent = p
+            u.rhs    = best_rhs
+            u.parent = best_parent
+
+        # Invalidate existing open-list entry (lazy deletion via version bump).
+        self._node_version[u] += 1
+
+        if u.g != u.rhs:
+            self._push(u)
+
+    def compute_shortest_path(self):
+        while self.open and (
+            self._peek_key() < self.calculate_key(self.goal)
+            or self.goal.rhs != self.goal.g
+        ):
+            key, u = self._pop()
+            if u is None:
+                break
+
+            if u.g > u.rhs:      # overconsistent → make consistent
+                u.g = u.rhs
+            else:                 # underconsistent → raise g, propagate
+                u.g = inf
+                self.update_vertex(u)
+
+            for s in u.neighbors:
+                self.update_vertex(s)
+
+    def step(self):
+        if (self.robot.row, self.robot.col) == (self.goal.row, self.goal.col):
+            return 1
+
+        # Sync fire map with true world state.
+        for r in range(self.robot.world.rows):
+            for c in range(self.robot.world.cols):
+                if self.robot.fire[r, c] and not self.robot.world.is_fire(r, c):
+                    self.robot.fire[r, c] = 0
+
+        self.robot.sense_radar()
+
+        changed = False
+        for n in self.nodes.values():
+            new_c = self.state_cost(n)
+            if new_c != n.old_c:
+                n.old_c = new_c          # refresh baseline right away
+                self.update_vertex(n)
+                for nb in n.neighbors:   # neighbors' rhs depends on n.g
+                    self.update_vertex(nb)
+                changed = True
+
+        # When the robot moves to a new cell, make the new cell the start.  
+        curr_pos = (self.robot.row, self.robot.col)
+        if curr_pos != (self.start.row, self.start.col):
+            # Demote old start back to a normal node and let it get a real rhs.
+            old_start = self.start
+            old_start.rhs = inf
+            self.update_vertex(old_start)
+
+            # Promote new start: rhs = 0, no predecessors contribute.
+            self.start = self.nodes[curr_pos]
+            self.start.rhs = 0
+            self.start.g   = 0
+            self._push(self.start)
+            changed = True
+
+        if changed:
+            self.compute_shortest_path()
+
+        curr = self.nodes[(self.robot.row, self.robot.col)]
+        if curr.g == inf and curr != self.goal:
+            return -1
+        if curr == self.goal:
+            return 1
+
+        def neighbor_score(s):
+            base_cost = self.edge_cost(curr, s) + s.g
+            if (s.row, s.col) in self._recent_positions:
+                base_cost += self._revisit_penalty
+            base_cost += 0.01 * self.heuristic(s, self.goal)
+            return base_cost
+
+        best = min(curr.neighbors, key=neighbor_score)
+
+        prev_pos = (self.robot.row, self.robot.col)
+        moved = self.robot.command(best.row - self.robot.row, best.col - self.robot.col)
+        self.robot.sense_radar()
+
+        if moved:
+            self._last_pos = prev_pos
+            self._recent_positions.append(prev_pos)
+
+        return 0
+
+    def get_path(self, max_len=500):
+        """
+        Reconstruct a forward path from the robot's current node by
+        following the greedy policy implied by g-values, similar to
+        the D* Lite planner. This is purely for visualization.
+        """
+        curr = self.nodes[(self.robot.row, self.robot.col)]
+        if curr.g == inf:
+            return []
+
+        path = [curr]
+        visited = {(curr.row, curr.col)}
+        for _ in range(max_len):
+            if curr == self.goal:
+                break
+            # Choose neighbor that minimizes edge_cost + g (forward policy).
+            curr = min(
+                curr.neighbors,
+                key=lambda s: self.edge_cost(curr, s) + s.g
+            )
+            if (curr.row, curr.col) in visited:
+                break
+            visited.add((curr.row, curr.col))
+            path.append(curr)
+        return path
