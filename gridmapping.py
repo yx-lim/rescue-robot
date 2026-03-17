@@ -91,7 +91,7 @@ w = [
 
 walls = np.array([[1.0 * (c == "x") for c in s] for s in w])
 world = World(walls,
-             fire_spread_prob=0.003,        # prob to spread to open cell per step
+             fire_spread_prob=0.001,        # prob to spread to open cell per step
              fire_spread_prob_wall=0.006,   # prob to spread to wall cell per step
              burn_out_time=8.0,           # seconds before cell burns out (can reignite)
              num_ignition_points=50)       # random cells to ignite at start; 0 = no fire

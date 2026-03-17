@@ -170,18 +170,38 @@ class Visualization():
         # Create the color range.  There are clearly more elegant ways...
         color = np.ones((self.rows, self.cols, 3))
         # has_fire = hasattr(self.robot.world, 'is_fire')
-        orange = np.array([1.0, 0.5, 0.0])
+        orange = np.array([1.0, 0.0, 0.0])
         for row in range(self.rows):
             for col in range(self.cols):
                 p = prob[row, col]
 
                 if p == 0:
-                    color[row, col, :] = np.array([1.0, 1.0, 0.0])   # yellow
+                    color[row, col, :] = np.array([1.0, 1.0, 0.0])  # yellow
                 else:
                     level = 1.0 - p
-                    color[row, col, :] = np.array([level, level, 1])  # blue tint
+                    color[row, col, :] = np.array([level, level, 1.0])  # blue tint
 
-                if self.robot.fire[row, col]:
+                if isinstance(self.planner, PlannerTemporal):
+                    fire_timeline = self.planner.fire_pred[:20, row, col]
+                    burning_steps = np.where(fire_timeline > 0)[0]
+
+                    if len(burning_steps) > 0:
+                        first_t = burning_steps[0]
+                        fire_fraction = len(burning_steps) / 20
+                        normalized_t = first_t / 20
+
+                        # Red = fire soon and sustained, yellow = late or brief
+                        fire_color = np.array([
+                            1.0,
+                            0.5 + normalized_t * 0.2 + (1.0 - fire_fraction) * 0.3,  # G: starts at 0.5 minimum, trends yellow
+                            0.0
+                        ])
+
+                        # Stronger blend when fire arrives sooner
+                        opacity = 0.25 + 0.5 * (1.0 - normalized_t)
+                        color[row, col, :] = (1 - opacity) * color[row, col, :] + opacity * fire_color
+
+                if self.robot.world.is_fire(row, col):
                     color[row, col, :] = 0.6 * color[row, col, :] + 0.4 * orange
 
         if showPath:
