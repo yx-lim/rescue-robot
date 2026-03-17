@@ -25,38 +25,41 @@ from robot import Robot
 #   should be overlayed with an 'x'.
 #
 class Visualization():
-    def __init__(self, walls, robot: Robot, planner: PlannerDStarLite | PlannerTemporal):
+    def __init__(self, walls, robot: Robot, planner: PlannerDStarLite | PlannerTemporal | PlannerLPAStar):
         # Save the walls, robot, and determine the rows/cols:
         self.walls = walls
         self.robot = robot
+        self.world = robot.world
         self.planner = planner
         self.spots = np.sum(np.logical_not(walls))
         self.rows  = np.size(walls, axis=0)
         self.cols  = np.size(walls, axis=1)
 
-        self.fig1 = plt.figure(1)
-        self.fig2 = plt.figure(2)
-        
-        self._setup_figure(self.fig1, "Robot's Perception")
-        self._setup_figure(self.fig2, "True State")
+        # Single figure with two subplots side-by-side:
+        # left = true world, right = robot belief.
+        plt.close(1)
+        plt.close(2)
+        self.fig, (self.ax_true, self.ax_belief) = plt.subplots(1, 2, figsize=(12, 6))
+
+        self._setup_axes(self.ax_true, "True State")
+        self._setup_axes(self.ax_belief, "Robot's Perception")
 
         # Add the text.
-        self.fig1.gca().text(0, 40, "Probability: Yellow==0%")
-        self.fig1.gca().text(0, 42, "     White<=0.1%, Blue, Black=100%")
+        self.ax_belief.text(0, 40, "Probability: Yellow==0%")
+        self.ax_belief.text(0, 42, "     White<=0.1%, Blue, Black=100%")
 
         # Clear the content and mark.  Then show blank field.
-        self.content1 = None
-        self.mark1    = None
-        self.mark2    = None
-        self.path1    = None
-        self.path2    = None
-        self.content2 = None
+        self.content_belief = None
+        self.content_true = None
+        self.mark_belief = None
+        self.mark_true = None
+        self.path_belief = None
+        self.path_true = None
+
+        self.fig.tight_layout()
         self.show()
 
-    def _setup_figure(self, fig, title):
-        # Clear the current, or create a new figure.
-        fig.clf()
-        ax = fig.gca()
+    def _setup_axes(self, ax, title):
         ax.grid(False)
         ax.set_title(title, y=1.05)
         ax.axis("off")
@@ -64,22 +67,24 @@ class Visualization():
         ax.set_xlim(0, self.cols)
         ax.set_ylim(self.rows, 0)
 
-        for row in range(0, self.rows, 2):
-            ax.text(-0.3, 0.6 + row, f"{row}",
-                    verticalalignment="center",
-                    horizontalalignment="right")
-        for row in range(1, self.rows, 2):
-            ax.text(self.cols + 0.3, 0.6 + row, f"{row}",
-                    verticalalignment="center",
-                    horizontalalignment="left")
-        for col in range(0, self.cols, 2):
-            ax.text(0.5 + col, -0.3, f"{col}",
-                    verticalalignment="bottom",
-                    horizontalalignment="center")
-        for col in range(1, self.cols, 2):
-            ax.text(0.5 + col, self.rows + 0.3, f"{col}",
-                    verticalalignment="top",
-                    horizontalalignment="center")
+        # Add row/col numbers only on the belief subplot (right).
+        if ax is self.ax_belief:
+            for row in range(0, self.rows, 2):
+                ax.text(-0.3, 0.6 + row, f"{row}",
+                        verticalalignment="center",
+                        horizontalalignment="right")
+            for row in range(1, self.rows, 2):
+                ax.text(self.cols + 0.3, 0.6 + row, f"{row}",
+                        verticalalignment="center",
+                        horizontalalignment="left")
+            for col in range(0, self.cols, 2):
+                ax.text(0.5 + col, -0.3, f"{col}",
+                        verticalalignment="bottom",
+                        horizontalalignment="center")
+            for col in range(1, self.cols, 2):
+                ax.text(0.5 + col, self.rows + 0.3, f"{col}",
+                        verticalalignment="top",
+                        horizontalalignment="center")
 
         for row in range(self.rows + 1):
             ax.axhline(row, lw=1, color="k", zorder=1)
@@ -121,12 +126,12 @@ class Visualization():
 
     def updatemark(self, markRobot=True):
         # Clear/potentially remove the previous mark.
-        if self.mark1 is not None:
-            self.mark1.remove()
-            self.mark1 = None
-        if self.mark2 is not None:
-            self.mark2.remove()
-            self.mark2 = None
+        if self.mark_belief is not None:
+            self.mark_belief.remove()
+            self.mark_belief = None
+        if self.mark_true is not None:
+            self.mark_true.remove()
+            self.mark_true = None
 
         # If requested, add a new mark.
         if markRobot:
@@ -136,10 +141,7 @@ class Visualization():
             assert (row >= 0) and (row < self.rows), "Illegal robot row"
             assert (col >= 0) and (col < self.cols), "Illegal robot col"
 
-            assert 0 <= row < self.rows, "Illegal robot row"
-            assert 0 <= col < self.cols, "Illegal robot col"
-
-            self.mark1 = self.fig1.gca().text(
+            self.mark_belief = self.ax_belief.text(
                 0.5 + col, 0.5 + row, "x",
                 color="red",
                 verticalalignment="center",
@@ -148,7 +150,7 @@ class Visualization():
                 zorder=3
             )
 
-            self.mark2 = self.fig2.gca().text(
+            self.mark_true = self.ax_true.text(
                 0.5 + col, 0.5 + row, "x",
                 color="red",
                 verticalalignment="center",
@@ -163,9 +165,9 @@ class Visualization():
         assert np.size(prob, axis=0) == self.rows, "Inconsistent # of rows"
         assert np.size(prob, axis=1) == self.cols, "Inconsistent # of cols"
 
-        if self.content1 is not None:
-            self.content1.remove()
-            self.content1 = None
+        if self.content_belief is not None:
+            self.content_belief.remove()
+            self.content_belief = None
 
         # Create the color range.  There are clearly more elegant ways...
         color = np.ones((self.rows, self.cols, 3))
@@ -208,7 +210,7 @@ class Visualization():
             goal_row, goal_col = self._goal_pos()
             color[goal_row, goal_col, :] = np.array([0.0, 1.0, 0.0])
 
-        self.content1 = self.fig1.gca().imshow(
+        self.content_belief = self.ax_belief.imshow(
             color,
             aspect="equal",
             interpolation="none",
@@ -217,9 +219,9 @@ class Visualization():
         )
 
     def update_true(self, showPath):
-        if self.content2 is not None:
-            self.content2.remove()
-            self.content2 = None
+        if self.content_true is not None:
+            self.content_true.remove()
+            self.content_true = None
 
         color = np.ones((self.rows, self.cols, 3))
         orange = np.array([1.0, 0.5, 0.0])
@@ -238,7 +240,7 @@ class Visualization():
             goal_row, goal_col = self._goal_pos()
             color[goal_row, goal_col, :] = np.array([0.0, 1.0, 0.0])
 
-        self.content2 = self.fig2.gca().imshow(
+        self.content_true = self.ax_true.imshow(
             color,
             aspect="equal",
             interpolation="none",
@@ -247,12 +249,12 @@ class Visualization():
         )
 
     def updatepath(self):
-        if self.path1 is not None:
-            self.path1.remove()
-            self.path1 = None
-        if self.path2 is not None:
-            self.path2.remove()
-            self.path2 = None
+        if self.path_belief is not None:
+            self.path_belief.remove()
+            self.path_belief = None
+        if self.path_true is not None:
+            self.path_true.remove()
+            self.path_true = None
 
         route = self.planner.get_path()
         if not route:
@@ -262,15 +264,12 @@ class Visualization():
         if len(xs) == 0:
             return
 
-        self.path1, = self.fig1.gca().plot(xs, ys, color=[0, 1, 0], linewidth=2, zorder=2)
-        self.path2, = self.fig2.gca().plot(xs, ys, color=[0, 1, 0], linewidth=2, zorder=2)
+        self.path_belief, = self.ax_belief.plot(xs, ys, color=[0, 1, 0], linewidth=2, zorder=2)
+        self.path_true, = self.ax_true.plot(xs, ys, color=[0, 1, 0], linewidth=2, zorder=2)
 
     def show(self, msg=None, markRobot=False, showPath=False):
-        plt.figure(self.fig1.number)
         self.updategrid(showPath)
         self.updatemark(markRobot)
-
-        plt.figure(self.fig2.number)
         self.update_true(showPath)
         self.updatemark(markRobot)
 
