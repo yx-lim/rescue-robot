@@ -544,7 +544,7 @@ class PlannerLPAStar:
             self._push(u)
 
     def compute_shortest_path(self):
-        while self.open and (
+        while (
             self._peek_key() < self.calculate_key(self.goal)
             or self.goal.rhs != self.goal.g
         ):
@@ -582,13 +582,15 @@ class PlannerLPAStar:
         if curr_pos != (self.start.row, self.start.col):
             # Demote old start back to a normal node and let it get a real rhs.
             old_start = self.start
-            old_start.rhs = inf
-            self.update_vertex(old_start)
-
+            # old_start.rhs = inf
+            
             # Promote new start: rhs = 0, no predecessors contribute.
             self.start = self.nodes[curr_pos]
+            self.update_vertex(old_start)
             self.start.rhs = 0
-            self.start.g   = 0
+            self.start.parent = None
+            # self.update_vertex(old_start)
+            # self.start.g   = 0
             self._push(self.start)
             changed = True
 
@@ -601,17 +603,16 @@ class PlannerLPAStar:
         if curr == self.goal:
             return 1
 
-        def neighbor_score(s):
-            base_cost = self.edge_cost(curr, s) + s.g
-            if (s.row, s.col) in self._recent_positions:
-                base_cost += self._revisit_penalty
-            base_cost += 0.01 * self.heuristic(s, self.goal)
-            return base_cost
+        path = self.get_path()
 
-        best = min(curr.neighbors, key=neighbor_score)
+        if len(path) < 2:
+            return -1
+
+        next_node = path[1]
 
         prev_pos = (self.robot.row, self.robot.col)
-        moved = self.robot.command(best.row - self.robot.row, best.col - self.robot.col)
+        moved = self.robot.command(next_node.row - self.robot.row,
+                                next_node.col - self.robot.col)
         self.robot.sense_radar()
 
         if moved:
@@ -622,26 +623,35 @@ class PlannerLPAStar:
 
     def get_path(self, max_len=500):
         """
-        Reconstruct a forward path from the robot's current node by
-        following the greedy policy implied by g-values, similar to
-        the D* Lite planner. This is purely for visualization.
+        Reconstruct the path from the robot's current position (start)
+        to the goal by following parent pointers backward from the goal.
         """
-        curr = self.nodes[(self.robot.row, self.robot.col)]
-        if curr.g == inf:
+        start = self.nodes[(self.robot.row, self.robot.col)]
+        if self.goal.g == inf and self.goal.rhs == inf:
             return []
 
-        path = [curr]
-        visited = {(curr.row, curr.col)}
+        path_rev = []
+        curr = self.goal
+        visited = set()
+
         for _ in range(max_len):
-            if curr == self.goal:
+            path_rev.append(curr)
+
+            if curr == start:
                 break
-            # Choose neighbor that minimizes edge_cost + g (forward policy).
-            curr = min(
-                curr.neighbors,
-                key=lambda s: self.edge_cost(curr, s) + s.g
-            )
-            if (curr.row, curr.col) in visited:
-                break
-            visited.add((curr.row, curr.col))
-            path.append(curr)
-        return path
+
+            if curr.parent is None:
+                return []
+
+            key = (curr.row, curr.col)
+            if key in visited:
+                return []
+            visited.add(key)
+
+            curr = curr.parent
+
+        if path_rev[-1] != start:
+            return []
+
+        path_rev.reverse()
+        return path_rev
