@@ -55,3 +55,9 @@ class World:
                 prob = self._fire_spread_prob_wall if self._walls[nr, nc] else self._fire_spread_prob
                 if random.random() < prob:
                     self._fire_end_time[nr, nc] = self._time + self._burn_out_time
+
+    # Start fire at specific (row, col) coordinates.
+    def ignite_cells(self, coords):
+        for r, c in coords:
+            if 0 <= r < self.rows and 0 <= c < self.cols:
+                self._fire_end_time[r, c] = self._time + self._burn_out_time

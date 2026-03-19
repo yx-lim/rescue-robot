@@ -45,41 +45,81 @@ w1 = [
     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 ]
 
+# A* vs D* map comparison
+w1 = [
+"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+"x   x xxxxx   x  xx   xxxxx                                          x",
+"x x x   x   x x  xx   x   x                                          x",
+"x xxx xxx xxx x       xxx x                                          x",
+"x   x   x   x x  xxxx   x x                                          x",
+"x xxxxx xxx x x  x  xxxxx x                                          x",
+"x x   x     x x  x        x                                          x",
+"x xxx xxxxxxx x  x xxxxxxxx                                          x",
+"x   x       x x  x x     x                                           x",
+"x x xxxxxx  x x  x x xxx x                                           x",
+"x x      x  x x  x x x x x                                           x",
+"x x xxxx x  x x  x x x x x                                           x",
+"x x x  x x  x x  x x x x x                                           x",
+"x x x  x x  x x  x x x x x                                           x",
+"x x xxxx x  x x  x x x x x                                           x",
+"x x      x  x x  x x x x x                                           x",
+"x xxxxxxxxx  x x  x xxxxx x                                          x",
+"x x        x x x  x       x                                          x",
+"x x  xxxx  x x x  xxxxxxx x                                          x",
+"x x  x  x  x x x        x x                                          x",
+"x x  x  x  x x x  xxxxx x x                                          x",
+"x x  xxxx  x x x  x   x x x                                          x",
+"x x        x x x  x   x x x                                          x",
+"x xxxxxxxxx  x x  xxxxx x x                                          x",
+"x                                                                    x",
+"x        xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx            x",
+"x        x                                            x              x",
+"x        x                                            x              x",
+"x        x                                            x              x",
+"x        x                                            x              x",
+"x                                                                    x",
+"x        xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx            x",
+"x                                                                    x",
+"x                                                                    x",
+"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+]
+
+# Temporal A* vs D* map comparison
 w = [
-"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-"x                                                                  x",
-"x   xxxxxxxxxxxxx        xxxxxxxxxxxxx        xxxxxxxxxxxxx        x",
-"x   x           x        x           x        x           x        x",
-"x   x           x        x           x        x           x        x",
-"x   x           x        x           x        x           x        x",
-"x   x           x        x           x        x           x        x",
-"x   x           x        x           x        x           x        x",
-"x   xxxxx   xxxxx        xxxxx   xxxxx        xxxxx   xxxxx        x",
-"x       x   x                x   x                x   x            x",
-"x       x   x                x   x                x   x            x",
-"x       x   x                x   x                x   x            x",
-"x       x   xxxxxxxxxxxxxxxxxx   xxxxxxxxxxxxxxxxxx   x            x",
-"x       x                                                   xxxx   x",
-"x       x                                                   x  x   x",
-"x       x                                                   x  x   x",
-"x   xxxxxxxxxxxxx                                     xxxxxxxxxx   x",
-"x   x           x                                     x        x   x",
-"x   x           x                                     x        x   x",
-"x   x           x                                     x        x   x",
-"x   x           x                                     x        x   x",
-"x   x           x                                     x        x   x",
-"x   xxxxxxxxxxxxx                                     xxxxxxxxxx   x",
-"x                                                                  x",
-"x                  xxxxxxxxxxxxxxxxxxxxxxxxxxxxx                   x",
-"x                  x                           x                   x",
-"x                  x                           x                   x",
-"x                  x                           x                   x",
-"x                  x                           x                   x",
-"x                  xxxxxxxxxxxxxxxxxxxxxxxxxxxxx                   x",
-"x                                                                  x",
-"x                                                                  x",
-"x                                                                  x",
-"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+"x                                                                   x",
+"x xxxxxxxxxxxxxxxxxxxxx                                             x",
+"x x   x   x   x   x   x                                             x",
+"x x   x   x   x   x   x                                             x",
+"x x   x   x   x   x   x                                             x",
+"x xxxxx   xxxxx   xxxxx                                             x",
+"x x                   x                                             x",
+"x xxxxx   xxxxx   xxxxx                                             x",
+"x x   x   x   x   x   x                                             x",
+"x x   x   x   x   x   x                                             x",
+"x x   x   x   x   x   x                                             x",
+"x xxxxx   xxxxx   xxxxx                                             x",
+"x x                   x                                             x",
+"x xxxxx   xxxxx   xxxxx                                             x",
+"x x   x   x   x   x   x                                             x",
+"x x   x   x   x   x   x                                             x",
+"x x   x   x   x   x   x                                             x",
+"x xxxxxxxxxxxxxxxxxxxxx                                             x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"x                                                                   x",
+"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 ]
 
 # How to use continuous fire:
@@ -94,7 +134,7 @@ world = World(walls,
              fire_spread_prob=0.001,        # prob to spread to open cell per step
              fire_spread_prob_wall=0.006,   # prob to spread to wall cell per step
              burn_out_time=8.0,           # seconds before cell burns out (can reignite)
-             num_ignition_points=50)       # random cells to ignite at start; 0 = no fire
+             num_ignition_points=100)       # random cells to ignite at start; 0 = no fire
 rows = world.rows
 cols = world.cols
 auto = True
@@ -112,12 +152,15 @@ def main():
     
     # UNCOMMENT THE PLANNER YOU WANT TO USE
     # adjust horizon (max future time considered, horizon=10 means predict 10 steps ahead)
-    # planner = PlannerTemporal(robot, (5, 23), horizon=80, cost_uncertain=1, fire_multiplier=5, wait_cost=0.5)
-    # planner = PlannerDStarLite(robot, (5, 23), cost_uncertain=1, fire_multiplier=3)
-    planner = PlannerLPAStar(robot, (5, 23), cost_uncertain=1, fire_multiplier=3)
+    planner = PlannerTemporal(robot, (4, 1), horizon=80, cost_uncertain=1, fire_multiplier=100, wait_cost=0.5)
+    # planner = PlannerDStarLite(robot, (4, 1), cost_uncertain=1, fire_multiplier=100)
+    # planner = PlannerLPAStar(robot, (4, 23), cost_uncertain=1, fire_multiplier=3)
     
     if world._num_ignition_points > 0:
         world.start_fire()
+
+    manual_fire_coords = [(6, 2), (7, 2), (8, 2), (9, 2), (10, 2), (11, 2)]
+    world.ignite_cells(manual_fire_coords)
 
     # Initialize the figure.
     visual = Visualization(walls, robot, planner)
