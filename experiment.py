@@ -64,7 +64,6 @@ GOAL = (5, 23)
 FIRE_DT = 0.03
 FIRE_SPREAD_PROB_OPEN = 0.001
 FIRE_SPREAD_PROB_WALL = 0.006
-BURN_OUT_TIME = 8.0
 NUM_IGNITION_POINTS = 50
 
 
@@ -104,7 +103,6 @@ def run_trial(
     eval_fire_multiplier: float = 5.0,
     fire_spread_prob_open: float = FIRE_SPREAD_PROB_OPEN,
     fire_spread_prob_wall: float = FIRE_SPREAD_PROB_WALL,
-    burn_out_time: float = BURN_OUT_TIME,
     num_ignition_points: int = NUM_IGNITION_POINTS,
     start: Tuple[int, int] = START,
     goal: Tuple[int, int] = GOAL,
@@ -118,7 +116,6 @@ def run_trial(
         walls,
         fire_spread_prob=fire_spread_prob_open,
         fire_spread_prob_wall=fire_spread_prob_wall,
-        burn_out_time=burn_out_time,
         num_ignition_points=num_ignition_points,
     )
     if num_ignition_points > 0:
@@ -276,7 +273,6 @@ def run_experiment_suite(
     seed0: int = 0,
     fire_spread_prob_open: float = FIRE_SPREAD_PROB_OPEN,
     fire_spread_prob_wall: float = FIRE_SPREAD_PROB_WALL,
-    burn_out_time: float = BURN_OUT_TIME,
     num_ignition_points: int = NUM_IGNITION_POINTS,
     start: Tuple[int, int] = START,
     goal: Tuple[int, int] = GOAL,
@@ -293,7 +289,6 @@ def run_experiment_suite(
                 max_steps=max_steps,
                 fire_spread_prob_open=fire_spread_prob_open,
                 fire_spread_prob_wall=fire_spread_prob_wall,
-                burn_out_time=burn_out_time,
                 num_ignition_points=num_ignition_points,
                 start=start,
                 goal=goal,

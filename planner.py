@@ -246,11 +246,10 @@ class PlannerTemporal:
                 fire[r, c] = 1 if self.robot.world.is_fire(r, c) else 0
         return fire
 
-    def predict_fire(self, current_fire, spread_prob=0.003, burnout_prob=0.0005, changed_mask=None):
+    def predict_fire(self, current_fire, spread_prob=0.003, changed_mask=None):
         """
         Predict future fire occupancy over time.
         spread_prob: probability that fire spreads to a neighbor cell
-        burnout_prob: probability that a burning cell goes out
         """
         rows, cols = self.robot.world.rows, self.robot.world.cols
         neighbors = [(-1,-1), (-1,0), (-1,1),
@@ -266,10 +265,6 @@ class PlannerTemporal:
                 burning = np.argwhere(self.fire_pred[t] > 0)
 
                 for r, c in burning:
-                    if np.random.random() < burnout_prob:
-                        self.fire_pred[t + 1, r, c] = 0
-                        continue
-
                     for dr, dc in neighbors:
                         nr, nc = r + dr, c + dc
                         if 0 <= nr < rows and 0 <= nc < cols:
@@ -290,12 +285,8 @@ class PlannerTemporal:
             next_dirty = np.zeros_like(dirty_mask, dtype=bool)
 
             for r, c in np.argwhere(dirty_mask & (layer > 0)):
-                if np.random.random() < burnout_prob:
-                    next_layer[r, c] = 0
-                    next_dirty[r, c] = True
-                else:
-                    next_layer[r, c] = 1
-                    next_dirty[r, c] = True
+                next_layer[r, c] = 1
+                next_dirty[r, c] = True
 
                 for dr, dc in neighbors:
                     nr, nc = r + dr, c + dc
