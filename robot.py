@@ -35,7 +35,8 @@ class Robot():
                  lstart=-1.0,
                  lwall=0.4, 
                  lfree=0.2,
-                 lbound=7.0):
+                 lbound=7.0,
+                 true_walls=False):
         # Report.
         location = " (at %d, %d)" % (row, col)
         print("Starting robot with real" +
@@ -43,7 +44,8 @@ class Robot():
               "," + str(location))
 
         # Save the walls, the initial location, and the probabilities.
-        self.walls_logits = np.full((world.rows, world.cols), lstart)
+        self.walls_logits = np.full((world.rows, world.cols), lstart) if not true_walls else (world._walls * 2 - 1) * lbound
+        self.fire = np.zeros((world.rows, world.cols))
         self.lstart = lstart
         self.lwall = lwall
         self.lfree = lfree
@@ -63,7 +65,7 @@ class Robot():
 
     def command(self, drow, dcol):
         # Check the delta.
-        assert (max(abs(drow), abs(dcol)) == 1), "Bad delta"
+        assert (max(abs(drow), abs(dcol)) == 1), f"Bad delta, ({drow}, {dcol})"
         self.steps += 1
         # Try to move the robot the given delta.
         row = self.row + drow
@@ -101,7 +103,14 @@ class Robot():
             # Stop if outside map or if a wall is in the way (can't sense heat through walls)
             if not (0 <= nr < self.world.rows and 0 <= nc < self.world.cols) or self.world.is_wall(nr, nc):
                 return k
-    
+
+            if self.world.is_fire(nr, nc):
+                self.fire[nr, nc] = 1
+                return k
+
+        return len(self.pSensor)
+
+
     def sense_radar(self):
         angle = 0
         while angle < 2 * math.pi:

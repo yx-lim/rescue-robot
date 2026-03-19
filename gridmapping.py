@@ -88,23 +88,23 @@ w1 = [
 w = [
 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 "x                                                                   x",
-"x xxxxxxxxxxxxxxxxxxxxx                                             x",
-"x x   x   x   x   x   x                                             x",
-"x x   x   x   x   x   x                                             x",
-"x x   x   x   x   x   x                                             x",
-"x xxxxx   xxxxx   xxxxx                                             x",
-"x x                   x                                             x",
-"x xxxxx   xxxxx   xxxxx                                             x",
-"x x   x   x   x   x   x                                             x",
-"x x   x   x   x   x   x                                             x",
-"x x   x   x   x   x   x                                             x",
-"x xxxxx   xxxxx   xxxxx                                             x",
-"x x                   x                                             x",
-"x xxxxx   xxxxx   xxxxx                                             x",
-"x x   x   x   x   x   x                                             x",
-"x x   x   x   x   x   x                                             x",
-"x x   x   x   x   x   x                                             x",
-"x xxxxxxxxxxxxxxxxxxxxx                                             x",
+"x  xxxxxxxxxxxxxxxxxxxxx                                            x",
+"x  x   x   x   x   x   x                                            x",
+"x  x   x   x   x   x   x                                            x",
+"x  x   x   x   x   x   x                                            x",
+"x  xxxxx   xxxxx   xxxxx                                            x",
+"x  x                   x                                            x",
+"x  xxxxx   xxxxx   xxxxx                                            x",
+"x  x   x   x   x   x   x                                            x",
+"x  x   x   x   x   x   x                                            x",
+"x  x   x   x   x   x   x                                            x",
+"x  xxxxx   xxxxx   xxxxx                                            x",
+"x  x                   x                                            x",
+"x  xxxxx   xxxxx   xxxxx                                            x",
+"x  x   x   x   x   x   x                                            x",
+"x  x   x   x   x   x   x                                            x",
+"x  x   x   x   x   x   x                                            x",
+"x  xxxxxxxxxxxxxxxxxxxxx                                            x",
 "x                                                                   x",
 "x                                                                   x",
 "x                                                                   x",
@@ -131,9 +131,9 @@ w = [
 
 walls = np.array([[1.0 * (c == "x") for c in s] for s in w])
 world = World(walls,
-             fire_spread_prob=0.001,        # prob to spread to open cell per step
+             fire_spread_prob=0.003,        # prob to spread to open cell per step
              fire_spread_prob_wall=0.006,   # prob to spread to wall cell per step
-             num_ignition_points=100)       # random cells to ignite at start; 0 = no fire
+             num_ignition_points=0)       # random cells to ignite at start; 0 = no fire
 rows = world.rows
 cols = world.cols
 auto = True
@@ -147,22 +147,25 @@ FIRE_DT = 0.03
 #
 def main():
     
-    robot = Robot(world, row=31, col=34, pSensor=[1,1,0.8,0.8,0.7,0.7,0.7,0.5], thetainc=pi/20, lbound=10, lfree=0.2, lwall=0.5)
+    robot = Robot(world, row=31, col=34, pSensor=[1,1,1,1,1,1,1,1,1,1,1,1], thetainc=pi/20, lbound=10, lfree=0.2, lwall=0.5, true_walls=True)
+    robot2 = Robot(world, row=31, col=34, pSensor=[1,1,1,1,1,1,1,1,1,1,1,1], thetainc=pi/20, lbound=10, lfree=0.2, lwall=0.5, true_walls=True)
+    robot3 = Robot(world, row=31, col=34, pSensor=[1,1,1,1,1,1,1,1,1,1,1,1], thetainc=pi/20, lbound=10, lfree=0.2, lwall=0.5, true_walls=True)
     
     # UNCOMMENT THE PLANNER YOU WANT TO USE
     # adjust horizon (max future time considered, horizon=10 means predict 10 steps ahead)
-    planner = PlannerTemporal(robot, (4, 1), horizon=8, cost_uncertain=1, fire_multiplier=100, wait_cost=0.5)
-    # planner = PlannerDStarLite(robot, (4, 1), cost_uncertain=1, fire_multiplier=100. true_fire=True)
-    # planner = PlannerLPAStar(robot, (4, 23), cost_uncertain=1, fire_multiplier=3, true_fire=True)
+    planner = PlannerTemporal(robot, (4, 1), horizon=80, cost_uncertain=1, fire_multiplier=100)
+    planner2 = PlannerDStarLite(robot2, (4, 1), cost_uncertain=1, fire_multiplier=100, true_fire=True)
+    planner3 = PlannerAStarReplan(robot3, (4, 1), cost_uncertain=1, fire_multiplier=100, true_fire=True)
     
     if world._num_ignition_points > 0:
         world.start_fire()
 
-    manual_fire_coords = [(6, 2), (7, 2), (8, 2), (9, 2), (10, 2), (11, 2)]
+    manual_fire_coords = [(9, 2), (10, 2), (11, 2), (12, 2), (13, 2), (14, 2)]
     world.ignite_cells(manual_fire_coords)
 
     # Initialize the figure.
     visual = Visualization(walls, robot, planner)
+    #visual2 = Visualization(walls, robot2, planner2)
 
     if isinstance(planner.goal, tuple):
         goal_pos = planner.goal
@@ -171,12 +174,17 @@ def main():
 
     # Loop continually or until goal is reached.
     # while not auto or planner.start != planner.goal:
-    while not auto or (robot.row, robot.col) != goal_pos:
+    while not auto or ((robot.row, robot.col) != goal_pos or (robot2.row, robot2.col) != goal_pos or (robot3.row, robot3.col) != goal_pos):
         # Advance fire simulation (manual interval)
         if world._num_ignition_points > 0:
             world.step_fire(FIRE_DT)
         if auto:
-            planner.step()  
+            if (robot.row, robot.col) != goal_pos:
+                planner.step()
+            if (robot2.row, robot2.col) != goal_pos:
+                planner2.step()  
+            if (robot3.row, robot3.col) != goal_pos:
+                planner3.step()  
             visual.show(markRobot=True, showPath=True)
         else:
             visual.show(markRobot=True, showPath=False)
@@ -216,7 +224,13 @@ def main():
     
     print(robot.steps)
     print(planner.expanded_nodes)
-    time.sleep(5)
+    print(planner.fire_nodes)
+    print(robot2.steps)
+    print(planner2.expanded_nodes)
+    print(planner2.fire_nodes)
+    print(robot3.steps)
+    print(planner3.expanded_nodes)
+    print(planner3.fire_nodes)
 
 if __name__ == "__main__":
     main()

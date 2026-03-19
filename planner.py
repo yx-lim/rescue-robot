@@ -20,6 +20,7 @@ class PlannerDStarLite():
         self.cost_uncertain = cost_uncertain
         self.fire_multiplier = fire_multiplier
         self.expanded_nodes = 0
+        self.fire_nodes = 0
         self.true_fire = true_fire
 
         self.nodes = {}
@@ -54,19 +55,17 @@ class PlannerDStarLite():
     def state_cost(self, node):
         # Entering node cost
         logit = self.robot.walls_logits[node.row, node.col]
-        if self.true_fire:
-            fire = self.robot.world.is_fire(node.row, node.col)
-        else:
-            fire = self.robot.fire[node.row, node.col]
-
         if logit >= 0:
             return inf
-
         if logit < self.lfree:
             base = 1.0
         else:
             base = self.cost_uncertain
-
+        
+        if self.true_fire:
+            fire = self.robot.world.is_fire(node.row, node.col)
+        else:
+            fire = self.robot.fire[node.row, node.col]
         if fire:
             base *= self.fire_multiplier
 
@@ -124,6 +123,8 @@ class PlannerDStarLite():
         dcol = best.col - self.robot.col
 
         moved = self.robot.command(drow, dcol)
+        if self.robot.world.is_fire(self.robot.row, self.robot.col):
+            self.fire_nodes += 1
         self.robot.sense_radar()
 
         new_start = self.nodes[(self.robot.row, self.robot.col)]
@@ -179,30 +180,30 @@ class PlannerTemporal:
                  horizon=20,
                  lfree=None,
                  cost_uncertain=1.0,
-                 fire_multiplier=20.0,
-                 wait_cost=0.5):
+                 fire_multiplier=20.0):
         self.robot = robot
         self.goal = goal                  # tuple: (goal_row, goal_col)
         self.horizon = horizon
         self.lfree = lfree if lfree is not None else 1.5 * robot.lstart
         self.cost_uncertain = cost_uncertain
         self.fire_multiplier = fire_multiplier
-        self.wait_cost = wait_cost
 
         self.last_path = []
         self.last_true_fire = None
         self.fire_pred = None
+        self.expanded_nodes = 0
+        self.fire_nodes = 0
 
-        # 8-neighborhood + wait
+        # 8-neighborhood
         self.moves = [
             (-1, -1), (-1, 0), (-1, 1),
-            ( 0, -1), ( 0, 0), ( 0, 1),
+            ( 0, -1),          ( 0, 1),
             ( 1, -1), ( 1, 0), ( 1, 1),
         ]
 
         # Do an initial sense so walls/fire beliefs are populated
         self.robot.sense_radar()
-        current_fire = self.capture_true_fire()
+        current_fire = self.robot.world.fire
         self.last_true_fire = current_fire.copy()
         self.predict_fire(current_fire)
 
@@ -229,22 +230,12 @@ class PlannerTemporal:
         return base
 
     def step_cost(self, dr, dc, r, c, t):
-        if dr == 0 and dc == 0:
-            move_len = self.wait_cost
-        elif dr != 0 and dc != 0:
+        if dr != 0 and dc != 0:
             move_len = sqrt(2)
         else:
             move_len = 1.0
 
         return move_len * self.cell_cost(r, c, t)
-
-    def capture_true_fire(self):
-        rows, cols = self.robot.world.rows, self.robot.world.cols
-        fire = np.zeros((rows, cols), dtype=np.uint8)
-        for r in range(rows):
-            for c in range(cols):
-                fire[r, c] = 1 if self.robot.world.is_fire(r, c) else 0
-        return fire
 
     def predict_fire(self, current_fire, spread_prob=0.003, changed_mask=None):
         """
@@ -308,7 +299,7 @@ class PlannerTemporal:
             self.fire_pred[:-1] = self.fire_pred[1:]
             self.fire_pred[-1] = self.fire_pred[-2]
 
-        current_fire = self.capture_true_fire()
+        current_fire = self.robot.world.fire
         if self.last_true_fire is None:
             changed_mask = None
         else:
@@ -332,6 +323,7 @@ class PlannerTemporal:
 
         while open_heap:
             _, g, state = heapq.heappop(open_heap)
+            self.expanded_nodes += 1
             r, c, t = state
 
             if state in visited:
@@ -342,11 +334,8 @@ class PlannerTemporal:
                 best_goal_state = state
                 break
 
-            # if t >= self.horizon:
-            #     continue
-
             for dr, dc in self.moves:
-                nr, nc, nt = r + dr, c + dc, t + 1
+                nr, nc, nt = r + dr, c + dc, min(t + 1, self.horizon)
 
                 if not (0 <= nr < self.robot.world.rows and 0 <= nc < self.robot.world.cols):
                     continue
@@ -360,7 +349,7 @@ class PlannerTemporal:
                     continue
 
                 ng = g + cst
-                nxt = (nr, nc, nt)
+                nxt = (nr, nc, min(nt, self.horizon))
 
                 if nxt not in gscore or ng < gscore[nxt]:
                     gscore[nxt] = ng
@@ -412,12 +401,8 @@ class PlannerTemporal:
         drow = nr - self.robot.row
         dcol = nc - self.robot.col
         moved = self.robot.command(drow, dcol)
-
-        # refresh sensing after motion attempt
-        self.robot.sense_radar()
-
-        if (self.robot.row, self.robot.col) == self.goal:
-            return 1
+        if self.robot.world.is_fire(self.robot.row, self.robot.col):
+            self.fire_nodes += 1
 
         # if move failed but planner suggested something, just continue next cycle
         return 0 if moved or len(path) > 1 else -1
@@ -428,7 +413,7 @@ class PlannerTemporal:
         """
         if not self.last_path:
             self.plan()
-        return [(r, c) for (r, c, t) in self.last_path]
+        return [(r, c) for (r, c, t) in self.last_path[1:]]
 
 
 class PlannerAStarReplan:
@@ -445,8 +430,9 @@ class PlannerAStarReplan:
         self.lfree = lfree if lfree else 1.5 * robot.lstart
         self.cost_uncertain = cost_uncertain
         self.fire_multiplier = fire_multiplier
-        self.expanded_nodes = 0
         self.true_fire = true_fire
+        self.expanded_nodes = 0
+        self.fire_nodes = 0
 
         # Build nodes
         self.nodes = {}
@@ -470,7 +456,7 @@ class PlannerAStarReplan:
 
     def state_cost(self, node):
         logit = self.robot.walls_logits[node.row, node.col]
-        if truefire:
+        if self.true_fire:
             fire = self.robot.world.is_fire(node.row, node.col)
         else:
             fire = self.robot.fire[node.row, node.col]
@@ -549,6 +535,8 @@ class PlannerAStarReplan:
         dcol = next_node.col - self.robot.col
 
         self.robot.command(drow, dcol)
+        if self.robot.world.is_fire(self.robot.row, self.robot.col):
+            self.fire_nodes += 1
 
         return 0
 
