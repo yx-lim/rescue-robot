@@ -12,7 +12,7 @@ from math import pi
 from visualization import Visualization
 from world import World
 from robot import Robot
-from planner import PlannerDStarLite, PlannerTemporal, PlannerLPAStar
+from planner import PlannerDStarLite, PlannerTemporal, PlannerAStarReplan
 
 #
 #  Define the Walls
@@ -113,8 +113,9 @@ def main():
     # UNCOMMENT THE PLANNER YOU WANT TO USE
     # adjust horizon (max future time considered, horizon=10 means predict 10 steps ahead)
     # planner = PlannerTemporal(robot, (5, 23), horizon=80, cost_uncertain=1, fire_multiplier=5, wait_cost=0.5)
-    # planner = PlannerDStarLite(robot, (5, 23), cost_uncertain=1, fire_multiplier=3)
-    planner = PlannerLPAStar(robot, (5, 23), cost_uncertain=1, fire_multiplier=3)
+    planner = PlannerDStarLite(robot, (5, 23), cost_uncertain=1, fire_multiplier=3)
+    # planner = PlannerLPAStar(robot, (5, 23), cost_uncertain=1, fire_multiplier=3)
+    # planner = PlannerAStarReplan(robot, (5, 23), cost_uncertain=1, fire_multiplier=3)
     
     if world._num_ignition_points > 0:
         world.start_fire()
@@ -173,6 +174,7 @@ def main():
             robot.sense_radar()
     
     print(robot.steps)
+    print(planner.expanded_nodes)
     time.sleep(5)
 
 if __name__ == "__main__":
