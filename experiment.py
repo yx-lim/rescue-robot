@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 from world import World
 from robot import Robot
-from planner import PlannerDStarLite, PlannerTemporal, PlannerLPAStar
+from planner import PlannerDStarLite, PlannerTemporal, PlannerAStarReplan
 
 
 # ----------------------------
@@ -507,13 +507,13 @@ def main(
     def make_temporal(robot: Robot):
         return PlannerTemporal(robot, GOAL, horizon=80, cost_uncertain=1, fire_multiplier=5, wait_cost=0.5)
 
-    def make_lpa(robot: Robot):
-        return PlannerLPAStar(robot, GOAL, cost_uncertain=1, fire_multiplier=3)
+    def make_astar(robot: Robot):
+        return PlannerAStarReplan(robot, GOAL, cost_uncertain=1, fire_multiplier=3)
 
     planner_defs = {
         "DStarLite": make_dstar,
         "Temporal": make_temporal,
-        "LPA*": make_lpa,
+        "LPA*": make_astar,
     }
 
     print("\n=== Base comparison ===")

@@ -18,6 +18,7 @@ class PlannerDStarLite():
         self.lfree = lfree if lfree else 1.5*robot.lstart
         self.cost_uncertain = cost_uncertain
         self.fire_multiplier = fire_multiplier
+        self.expanded_nodes = 0
 
         self.nodes = {}
         for r in range(robot.world.rows):
@@ -90,19 +91,22 @@ class PlannerDStarLite():
             self.open[0][0] < self.calculate_key(self.start) or self.start.g != self.start.rhs
         ):
             k_old, u = heapq.heappop(self.open)
+            
             k_new = self.calculate_key(u)
 
             if k_old < k_new:
                 heapq.heappush(self.open, (k_new, u))
-            elif u.g > u.rhs:
-                u.g = u.rhs
-                for p in u.neighbors:
-                    self.update_vertex(p)
             else:
-                u.g = inf
-                self.update_vertex(u)
-                for p in u.neighbors:
-                    self.update_vertex(p)
+                self.expanded_nodes += 1
+                if u.g > u.rhs:
+                    u.g = u.rhs
+                    for p in u.neighbors:
+                        self.update_vertex(p)
+                else:
+                    u.g = inf
+                    self.update_vertex(u)
+                    for p in u.neighbors:
+                        self.update_vertex(p)
 
     def step(self):
         if self.start == self.goal:
@@ -431,227 +435,123 @@ class PlannerTemporal:
         return [(r, c) for (r, c, t) in self.last_path]
 
 
-class PlannerLPAStar:
-    def __init__(self, robot, goal, lfree=None, cost_uncertain=1.0, fire_multiplier=5.0):
+class PlannerAStarReplan:
+    def __init__(self,
+                 robot,
+                 goal,
+                 lfree=None,
+                 cost_uncertain=1.0,
+                 fire_multiplier=5.0):
+
         self.robot = robot
         self.goal_pos = goal
-        self.lfree = lfree if lfree is not None else 1.5 * robot.lstart
+        self.lfree = lfree if lfree else 1.5 * robot.lstart
         self.cost_uncertain = cost_uncertain
         self.fire_multiplier = fire_multiplier
+        self.expanded_nodes = 0
 
-        self._revisit_penalty = 2.0
-        self._recent_positions = deque(maxlen=10)
-        self._recent_positions.append((robot.row, robot.col))
-        self._last_pos = None
-
+        # Build nodes
         self.nodes = {}
         for r in range(robot.world.rows):
             for c in range(robot.world.cols):
                 self.nodes[(r, c)] = Node(r, c)
 
+        
         for (r, c), node in self.nodes.items():
-            for dr, dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]:
+            for dr, dc in [(-1,-1),(-1,0),(-1,1),
+                           (0,-1),        (0,1),
+                           (1,-1),(1,0),(1,1)]:
                 nr, nc = r + dr, c + dc
                 if (nr, nc) in self.nodes:
                     node.neighbors.append(self.nodes[(nr, nc)])
 
-        self.goal = self.nodes[goal]
-
-        # Lazy-deletion open list.
-        self.open = []
-        self._node_version = {n: 0 for n in self.nodes.values()}
-
-        self.robot.sense_radar()
-        self._initialize_search()
-
-
-    def _initialize_search(self):
-        for node in self.nodes.values():
-            node.g   = inf
-            node.rhs = inf
-            node.old_c = self.state_cost(node)
-            node.parent = None
-
-        # Forward LPA*: seed is the START, not the goal.
-        self.start = self.nodes[(self.robot.row, self.robot.col)]
-        self.start.rhs = 0
-        self._push(self.start)
-        self.compute_shortest_path()
-
-    def _push(self, node):
-        self._node_version[node] += 1
-        heapq.heappush(
-            self.open,
-            (self.calculate_key(node), self._node_version[node], node)
-        )
-
-    def _pop(self):
-        while self.open:
-            key, ver, node = heapq.heappop(self.open)
-            if ver == self._node_version[node]:
-                return key, node
-        return None, None
-
-    def _peek_key(self):
-        while self.open:
-            key, ver, node = self.open[0]
-            if ver == self._node_version[node]:
-                return key
-            heapq.heappop(self.open)
-        return (inf, inf)
+        self.goal = self.nodes[self.goal_pos]
 
     def heuristic(self, a, b):
         return max(abs(a.row - b.row), abs(a.col - b.col))
 
     def state_cost(self, node):
         logit = self.robot.walls_logits[node.row, node.col]
-        fire  = self.robot.world.is_fire(node.row, node.col)
+        fire = self.robot.world.is_fire(node.row, node.col)
+
         if logit >= 0:
             return inf
+
         base = 1.0 if logit < self.lfree else self.cost_uncertain
+
         if fire:
             base *= self.fire_multiplier
+
         return base
 
     def edge_cost(self, u, v):
         step = np.sqrt(2) if (u.row != v.row and u.col != v.col) else 1.0
         return step * self.state_cost(v)
 
-    def calculate_key(self, s):
-        # Forward search: heuristic is distance to the GOAL.
-        m = min(s.g, s.rhs)
-        return (m + self.heuristic(s, self.goal), m)
+    def astar(self, start, goal):
+        open_list = []
+        heapq.heappush(open_list, (0, start))
 
-    def update_vertex(self, u):
-        if u != self.start:
-            best_rhs    = inf
-            best_parent = None
-            # Forward search: rhs(u) = min over predecessors p of
-            #   g(p) + edge_cost(p, u)
-            # On an undirected grid every neighbor is a valid predecessor.
-            for p in u.neighbors:
-                cand = p.g + self.edge_cost(p, u)
-                if cand < best_rhs:
-                    best_rhs    = cand
-                    best_parent = p
-            u.rhs    = best_rhs
-            u.parent = best_parent
+        came_from = {}
+        g_score = {start: 0}
 
-        # Invalidate existing open-list entry (lazy deletion via version bump).
-        self._node_version[u] += 1
+        while open_list:
+            _, current = heapq.heappop(open_list)
+            self.expanded_nodes += 1
 
-        if u.g != u.rhs:
-            self._push(u)
+            if current == goal:
+                return self.reconstruct_path(came_from, current)
 
-    def compute_shortest_path(self):
-        while (
-            self._peek_key() < self.calculate_key(self.goal)
-            or self.goal.rhs != self.goal.g
-        ):
-            key, u = self._pop()
-            if u is None:
-                break
+            for nbr in current.neighbors:
+                cost = self.edge_cost(current, nbr)
+                if cost == inf:
+                    continue
 
-            if u.g > u.rhs:      # overconsistent → make consistent
-                u.g = u.rhs
-            else:                 # underconsistent → raise g, propagate
-                u.g = inf
-                self.update_vertex(u)
+                tentative_g = g_score[current] + cost
 
-            for s in u.neighbors:
-                self.update_vertex(s)
+                if nbr not in g_score or tentative_g < g_score[nbr]:
+                    g_score[nbr] = tentative_g
+                    f = tentative_g + self.heuristic(nbr, goal)
+                    heapq.heappush(open_list, (f, nbr))
+                    came_from[nbr] = current
+
+        return []  # no path
+
+    def reconstruct_path(self, came_from, current):
+        path = [current]
+        while current in came_from:
+            current = came_from[current]
+            path.append(current)
+        path.reverse()
+        return path
+
+    # -----------------------
+    # Step (replan every time)
+    # -----------------------
 
     def step(self):
-        if (self.robot.row, self.robot.col) == (self.goal.row, self.goal.col):
+        start = self.nodes[(self.robot.row, self.robot.col)]
+
+        if start == self.goal:
             return 1
 
         self.robot.sense_radar()
 
-        changed = False
-        for n in self.nodes.values():
-            new_c = self.state_cost(n)
-            if new_c != n.old_c:
-                n.old_c = new_c          # refresh baseline right away
-                self.update_vertex(n)
-                for nb in n.neighbors:   # neighbors' rhs depends on n.g
-                    self.update_vertex(nb)
-                changed = True
-
-        # When the robot moves to a new cell, make the new cell the start.  
-        curr_pos = (self.robot.row, self.robot.col)
-        if curr_pos != (self.start.row, self.start.col):
-            # Demote old start back to a normal node and let it get a real rhs.
-            old_start = self.start
-            # old_start.rhs = inf
-            
-            # Promote new start: rhs = 0, no predecessors contribute.
-            self.start = self.nodes[curr_pos]
-            self.update_vertex(old_start)
-            self.start.rhs = 0
-            self.start.parent = None
-            # self.update_vertex(old_start)
-            # self.start.g   = 0
-            self._push(self.start)
-            changed = True
-
-        if changed:
-            self.compute_shortest_path()
-
-        curr = self.nodes[(self.robot.row, self.robot.col)]
-        if curr.g == inf and curr != self.goal:
-            return -1
-        if curr == self.goal:
-            return 1
-
-        path = self.get_path()
+        path = self.astar(start, self.goal)
 
         if len(path) < 2:
-            return -1
+            return -1  # no path
 
         next_node = path[1]
 
-        prev_pos = (self.robot.row, self.robot.col)
-        moved = self.robot.command(next_node.row - self.robot.row,
-                                next_node.col - self.robot.col)
-        self.robot.sense_radar()
+        drow = next_node.row - self.robot.row
+        dcol = next_node.col - self.robot.col
 
-        if moved:
-            self._last_pos = prev_pos
-            self._recent_positions.append(prev_pos)
+        self.robot.command(drow, dcol)
 
         return 0
 
-    def get_path(self, max_len=500):
-        """
-        Reconstruct the path from the robot's current position (start)
-        to the goal by following parent pointers backward from the goal.
-        """
+
+    def get_path(self):
         start = self.nodes[(self.robot.row, self.robot.col)]
-        if self.goal.g == inf and self.goal.rhs == inf:
-            return []
-
-        path_rev = []
-        curr = self.goal
-        visited = set()
-
-        for _ in range(max_len):
-            path_rev.append(curr)
-
-            if curr == start:
-                break
-
-            if curr.parent is None:
-                return []
-
-            key = (curr.row, curr.col)
-            if key in visited:
-                return []
-            visited.add(key)
-
-            curr = curr.parent
-
-        if path_rev[-1] != start:
-            return []
-
-        path_rev.reverse()
-        return path_rev
+        return self.astar(start, self.goal)

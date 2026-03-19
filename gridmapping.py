@@ -12,7 +12,7 @@ from math import pi
 from visualization import Visualization
 from world import World
 from robot import Robot
-from planner import PlannerDStarLite, PlannerTemporal, PlannerLPAStar
+from planner import PlannerDStarLite, PlannerTemporal, PlannerAStarReplan
 
 #
 #  Define the Walls
@@ -216,6 +216,7 @@ def main():
             robot.sense_radar()
     
     print(robot.steps)
+    print(planner.expanded_nodes)
     time.sleep(5)
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from planner import PlannerDStarLite, PlannerTemporal, PlannerLPAStar
+from planner import PlannerDStarLite, PlannerTemporal, PlannerAStarReplan
 from robot import Robot
 
 
@@ -25,7 +25,7 @@ from robot import Robot
 #   should be overlayed with an 'x'.
 #
 class Visualization():
-    def __init__(self, walls, robot: Robot, planner: PlannerDStarLite | PlannerTemporal | PlannerLPAStar):
+    def __init__(self, walls, robot: Robot, planner: PlannerDStarLite | PlannerTemporal | PlannerAStarReplan):
         # Save the walls, robot, and determine the rows/cols:
         self.walls = walls
         self.robot = robot
