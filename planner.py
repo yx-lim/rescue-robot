@@ -13,12 +13,14 @@ class PlannerDStarLite():
                  goal: Tuple[int, int],
                  lfree=None,
                  cost_uncertain=1.0,
-                 fire_multiplier=5.0):
+                 fire_multiplier=5.0,
+                 true_fire=True):
         self.robot = robot
         self.lfree = lfree if lfree else 1.5*robot.lstart
         self.cost_uncertain = cost_uncertain
         self.fire_multiplier = fire_multiplier
         self.expanded_nodes = 0
+        self.true_fire = true_fire
 
         self.nodes = {}
         for r in range(robot.world.rows):
@@ -52,7 +54,10 @@ class PlannerDStarLite():
     def state_cost(self, node):
         # Entering node cost
         logit = self.robot.walls_logits[node.row, node.col]
-        fire = self.robot.world.is_fire(node.row, node.col)
+        if self.true_fire:
+            fire = self.robot.world.is_fire(node.row, node.col)
+        else:
+            fire = self.robot.fire[node.row, node.col]
 
         if logit >= 0:
             return inf
@@ -218,7 +223,7 @@ class PlannerTemporal:
         base = 1.0 if logit < self.lfree else self.cost_uncertain
 
         # predicted fire penalty
-        if self.fire_pred[t, r, c]:
+        if self.fire_pred[min(t, self.horizon-1), r, c]:
             base *= self.fire_multiplier
 
         return base
@@ -346,8 +351,8 @@ class PlannerTemporal:
                 best_goal_state = state
                 break
 
-            if t >= self.horizon:
-                continue
+            # if t >= self.horizon:
+            #     continue
 
             for dr, dc in self.moves:
                 nr, nc, nt = r + dr, c + dc, t + 1
@@ -441,7 +446,8 @@ class PlannerAStarReplan:
                  goal,
                  lfree=None,
                  cost_uncertain=1.0,
-                 fire_multiplier=5.0):
+                 fire_multiplier=5.0,
+                 true_fire=True):
 
         self.robot = robot
         self.goal_pos = goal
@@ -449,6 +455,7 @@ class PlannerAStarReplan:
         self.cost_uncertain = cost_uncertain
         self.fire_multiplier = fire_multiplier
         self.expanded_nodes = 0
+        self.true_fire = true_fire
 
         # Build nodes
         self.nodes = {}
@@ -472,7 +479,10 @@ class PlannerAStarReplan:
 
     def state_cost(self, node):
         logit = self.robot.walls_logits[node.row, node.col]
-        fire = self.robot.world.is_fire(node.row, node.col)
+        if truefire:
+            fire = self.robot.world.is_fire(node.row, node.col)
+        else:
+            fire = self.robot.fire[node.row, node.col]
 
         if logit >= 0:
             return inf

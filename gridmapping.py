@@ -152,9 +152,9 @@ def main():
     
     # UNCOMMENT THE PLANNER YOU WANT TO USE
     # adjust horizon (max future time considered, horizon=10 means predict 10 steps ahead)
-    planner = PlannerTemporal(robot, (4, 1), horizon=80, cost_uncertain=1, fire_multiplier=100, wait_cost=0.5)
-    # planner = PlannerDStarLite(robot, (4, 1), cost_uncertain=1, fire_multiplier=100)
-    # planner = PlannerLPAStar(robot, (4, 23), cost_uncertain=1, fire_multiplier=3)
+    planner = PlannerTemporal(robot, (4, 1), horizon=8, cost_uncertain=1, fire_multiplier=100, wait_cost=0.5)
+    # planner = PlannerDStarLite(robot, (4, 1), cost_uncertain=1, fire_multiplier=100. true_fire=True)
+    # planner = PlannerLPAStar(robot, (4, 23), cost_uncertain=1, fire_multiplier=3, true_fire=True)
     
     if world._num_ignition_points > 0:
         world.start_fire()
