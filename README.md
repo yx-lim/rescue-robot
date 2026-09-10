@@ -92,9 +92,9 @@ The project evolved across planner-specific branches:
 
 | Branch | Contents |
 | --- | --- |
-| [`main`](https://github.com/yx-lim/me133b-fork/tree/main) | D\* Lite simulator, sensing, fire dynamics, and Matplotlib visualization |
-| [`astar`](https://github.com/yx-lim/me133b-fork/tree/astar) | Repeated A\* implementation and experiment harness |
-| [`temporal_planner`](https://github.com/yx-lim/me133b-fork/tree/temporal_planner) | Integrated D\* Lite, repeated A\*, Temporal A\*, and comparative experiments |
+| [`main`](https://github.com/yx-lim/rescue-robot/tree/main) | D\* Lite simulator, sensing, fire dynamics, and Matplotlib visualization |
+| [`astar`](https://github.com/yx-lim/rescue-robot/tree/astar) | Repeated A\* implementation and experiment harness |
+| [`temporal_planner`](https://github.com/yx-lim/rescue-robot/tree/temporal_planner) | Integrated D\* Lite, repeated A\*, Temporal A\*, and comparative experiments |
 
 On `main`:
 
@@ -110,8 +110,8 @@ node.py           Search-state representation
 ## Run the simulator
 
 ```bash
-git clone https://github.com/yx-lim/me133b-fork.git
-cd me133b-fork
+git clone https://github.com/yx-lim/rescue-robot.git
+cd rescue-robot
 
 python3 -m venv .venv
 source .venv/bin/activate
